@@ -3,7 +3,7 @@ params:
   section: "abc"
   pg: "abc"
   var: "abc"
-title: "Local area (CCG) maps (to be published March 8 2023)"
+title: "Local area (CCG) maps"
 output: 
  html_document: 
    self_contained: no
