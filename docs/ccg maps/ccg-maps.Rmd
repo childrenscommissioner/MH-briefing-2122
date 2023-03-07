@@ -3,7 +3,7 @@ params:
   section: "abc"
   pg: "abc"
   var: "abc"
-title: "Local area (CCG) maps"
+title: "Children's mental health services performance - Local area maps"
 output: 
  html_document: 
    self_contained: no
@@ -42,22 +42,21 @@ require(here)
 <br/>
   
 
-These maps present 2021-22 Clinical Commissioning Group (CCG) performance on five key indicators used to assess children's mental health services (CAMHS) provision. These indicators are:
+These maps present 2021-22 Clinical Commissioning Group (CCG) performance on five key indicators used to assess children's mental health services (CYPMHS) provision. These indicators are:
 <br/>
 
-* CCG spend on children's mental health as a percentage of CCG budget. This ranges from 0.4% in NHS Blackpool to 2.2% in NHS Salford.
+* Mental health spend per child - calculated using NHS Five Year Forward View for Mental Health spending figures and Office for National Statistics population estimates for Clinical Commissioning Group areas (where higher spend per child corresponds with a higher score). This ranges from £34 in NHS Doncaster to £141 in NHS Norfolk and Waveney.
 
-* Mental health spend per child (calculated using NHS Five Year Forward View (FYFV) spending figures and ONS mid-2020 CCG population estimates. This ranges from £34 in NHS Doncaster to £141 in NHS Norfolk and Waveney.
+* CCG spending on children’s mental health as a percentage of a CCG’s total allocation (where higher spending corresponds with a higher score) This ranges from 0.4% in NHS Blackpool to 2.2% in NHS Salford.
 
-* Total number of children referred to CAMHS as a proportion of the under-18 population. This ranges from 1.1% in NHS North West London to 11.5% in NHS South Tyneside. 
+* Average waiting time for children who receive a second contact with services (where lower average waiting times corresponds with a higher score). This ranges from 13 days in NHS Leicester City and NHS West Leicestershire to 80 days in NHS Sunderland.
 
-* Average waiting time between assessment and treatment for children who receive a second contact (a proxy for entering treatment). This ranges from 13 days in NHS West Leicestershire to 80 days in NHS Sunderland.
+* Total number of children referred to children’s mental health services as a proportion of the under-18 population (where higher shares of children referred corresponds with a higher score) This ranges from 3.4% in NHS North West London to 11.5% in NHS South Tyneside. 
 
-* The percentage of children whose referrals were closed before treatment. This ranges from 5% in NHS East Sussex to 50% in NHS North Cumbria.
+* The percentage of referrals that are closed before treatment (where a lower percentage of referrals closed corresponds with a higher score). This ranges from 5% in NHS East Sussex to 50% in NHS North Cumbria.
 <br/><br/>
 
-Also shown is an _overall score_ for each CCG calculated based on their performance on the indicators above. This provides an overall indication of how each CCG compares to the rest of England. For each indicator, CCGs are ranked from best to worst (e.g. shortest waiting time to longest) and assigned to 5 quintiles. Best performing CCGs are given a score of 5 while the worst performers are given a score of 1. We then add these quintile scores together to form an overall score ranging from 5 to 25 for each CCG.
-
+Also shown is an _overall score_ for each CCG calculated based on their performance on the indicators above. For each indicator, CCGs are ranked from best to worst (e.g. shortest waiting time to longest) and assigned to 5 quintiles. Scores are then given to each CCG based on their quintile group. The best performing 20% of CCGs are given a score of 5 while the worst performers are given a score of 1. We then add these quintile scores together to form an overall score ranging from a minimum of 5 (worst) to a maximum of 25 (best) for each CCG. An overall score of 5 would indicate being in the bottom quintile across all 5 measures while a score of 25 would indicate being in the top quintile across all measures.
 <br/>
  
 **NHS Clinical Commissioning Group Maps**
