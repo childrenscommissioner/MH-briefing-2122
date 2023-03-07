@@ -1,0 +1,528 @@
+
+# Notes 
+
+##### Open/close all sections #####
+
+# close all = Alt + o
+# Open all = Shift + Alt + o
+
+
+##### Comment out block of code #####
+#CTRL+SHIFT+c
+
+##### LAC format is YYYY-MM-DD !!#####
+
+
+
+
+
+
+
+
+##### Data table coffee and coding #####
+
+
+chick_weight<-as.data.table(ChickWeight)
+
+Q1diet<-chick_weight[,.N, by=Diet]
+
+# Diet 1 with 220
+
+##Q2 - Mean weight of chicks at time 21 by diet
+
+Q2<-chick_weight[Time==21,mean(weight),by=Diet]
+
+#Q3 New column  TRUE if weight greater than 100
+
+chick_weight[, heavyset := weight>=100]
+
+#Q4 make every column a character class
+
+chick_weight[, as.character(.SD)]
+
+#Q5 
+
+setnames(chick_weight,"heavyset","BigNBeautiful")
+
+
+
+##### count() is equal to group_by() %>%  tally(.) #####
+##### tally() is equal to group_by() %>%  summarise(n=sum())#####
+# Importing data
+
+
+
+
+# CLEANING #
+
+##### TEST FOR DUPLICATES #####
+
+EHE %>% group_by(ID_final) %>% mutate(n= n()) %>% ungroup() %>% filter(n>1)
+
+##### READING IN DATA - Excel spreadsheets #####
+
+# Mid-2020 CCG population estimates
+pop_2020 <- read_excel(here('inputs','pop_2020.xlsx'), sheet = "Mid-2020 Persons", range = "A7:CT143") %>% 
+  rename(ccg = 'CCG Name',
+         ccg_cd = 'CCG Code') %>% 
+  filter(!is.na(ccg)) %>% 
+  rowwise() %>% 
+  mutate(pop_2020 = sum(c_across('0':'17'), na.rm=TRUE)) %>% select(ccg, ccg_cd, pop_2020)
+
+##### DATA CLEANING - DPLYR - MUTATE ALL - take out commas from numbers #####
+
+df_LA_clean <- df_LA %>% 
+  #remove commas from numbers
+  mutate_all(~str_remove(.x,","))
+
+##### DATA CLEANING - DPLYR - MUTATE(ACROSS) - replace values in certain columns with NA #####
+
+df_nhse <- df_nhse %>% 
+  mutate(ccg = toupper(ccg)) %>% 
+  mutate(across(starts_with('t4'), ~ifelse(. %in% c("","*"),NA, .)))
+
+##### DATA CLEANING - BASE R - replacing column names using look up #####
+df_nhsd <- read.csv(here('inputs', 'nhsdigital_cleandata.csv'))
+nhsd_names <- read.csv(here('inputs','nhsd_names.csv'))
+names(df_nhsd) <- nhsd_names$New
+
+
+##### DEMOGRAPHICS SUMMARY TABLE #####
+
+
+dem_summary <- df %>% 
+  group_by(age_group) %>% 
+  tally() %>% 
+  mutate(perc=n/sum(n)*100) %>% 
+  rename(Group = age_group,
+         variable = n) %>% 
+  rbind(df %>% 
+          group_by(gender) %>% 
+          tally() %>% 
+          mutate(perc=n/sum(n)*100) %>% 
+          rename(Group = gender,
+                 variable = n)) %>% 
+  rbind(df %>% 
+          group_by(ethnicity) %>% 
+          tally() %>% 
+          mutate(perc=n/sum(n)*100) %>% 
+          rename(Group = ethnicity,
+                 variable = n)) %>%
+  rbind(df %>% 
+          group_by(fsm) %>% 
+          tally() %>% 
+          mutate(perc=n/sum(n)*100) %>% 
+          rename(Group = fsm,
+                 variable = n)) %>% 
+  rename(Count = variable,
+         Percentage = perc)
+#####
+
+##### FACTORING - ordering variables #####
+
+#mutate(cb_relkidch = factor(cb_relkidch, levels = c("Better", "Same", "Worse")))
+
+##### GATHERING columns ####
+# Key = anything you want it to be called (year) 
+# Value - whatever you want to name the value (columns you want switched e.g. yr2017, yr2018)
+
+select(LA_name, Rate1516, Rate1617, Rate1718) %>% gather(key=Year, value=Rate,Rate1516:Rate1718 )
+
+
+
+##### PIVOT_LONGER, PIVOT WIDER ####
+
+#garden_vars <- paste0("cb_garden", 1:6)
+# 
+# indresp %>% select(cb_gor_dv,all_of(garden_vars),w_kids018) %>%
+#   pivot_longer(cols=all_of(garden_vars),names_to="variable",values_to="value") %>%
+#   mutate(value = case_when(value == 0 ~ 0,
+#                            value == 1 ~ 1)) %>%
+#   group_by(cb_gor_dv, variable) %>%
+#   summarise(perc = (weighted.mean(value, wt=w_kids018, na.rm=TRUE))*100) %>%
+#   mutate(perc = paste0(round(perc,1),"%")) %>% 
+#   ungroup() %>%
+#   pivot_wider(names_from=cb_gor_dv, values_from=perc) %>%
+#   mutate(variable = case_when(variable == "cb_garden1" ~ "Private garden",
+#                               variable == "cb_garden2" ~ "Shared garden",
+#                               variable == "cb_garden3" ~ "Balcony",
+#                               variable == "cb_garden4" ~ "Rooftop garden or terrace",
+#                               variable == "cb_garden5" ~ "Other outdoor space",
+#                               variable == "cb_garden6" ~ "No outdoor space",
+#                               TRUE ~ variable)) %>%
+#   select(`Type of outdoor space`=variable, `North East`=`1`, `North West` = `2`, `Yorkshire and the Humber` = `3`,
+#          `East Midlands` = `4`, `West Midlands` = `5`, `East of England` = `6`, `London`=`7`, `South East` = `8`, `South West` = `9`) %>% kable(.)
+
+##### FUNCTION - Selecting relevant columns from SCP files #####
+
+
+
+
+
+
+##### Replace non-ASCII characters ######
+textclean::replace_non_ascii(sslong$q)
+##### ANALYSIS - How to sum specific columns - summarise_at/colsums #####
+
+sup_all %>% ungroup() %>% summarise_at(c("2016","2017"),function(x) sum(x))
+
+colSums(sup_all[,c("2016","2017")])
+
+
+
+
+sup_tc<-sup_long_all %>% filter(support=="Supported") %>% select(-support)
+
+require(cdata)
+
+yrs<-as.character(c(2016:2018))
+
+cT<-data.frame(year=yrs,count=paste0("count_",yrs),perc=paste0("perc_",yrs),stringsAsFactors = F)
+
+sup_tc2<-blocks_to_rowrecs(sup_tc,keyColumns = "LA_name",controlTable=cT)
+
+
+##### ANALYSIS - Quantile ranks #####
+ccg_df <- within(ccg_df,
+                 avgwait_2122_quintile <- as.integer(cut(avg_wait_days_2122, 
+                                                         quantile(avg_wait_days_2122, probs=0:5/5), include.lowest=TRUE)))
+
+ccg_df <- ccg_df %>%
+  mutate(avgwait_2122_quintile = ntile(-avg_wait_days_2122, 5))
+##### ANALYSIS - Sum across columns #####
+# Tier 4 bed days data is quarterly - calculate value per year
+t4_days <- t4_days %>% 
+  rowwise() %>% 
+  mutate(t4beddays_1718 = sum(c_across(t4beddays_Q1_201718:t4beddays_Q4_201718),na.rm=TRUE))
+
+##### ANALYSIS - DPLYR - MUTATE AT - round all columns except #####
+
+mutate_at(vars(-gender), ~ round(.,1))
+
+##### Reading/binding long list of LA files and resetting wd #####
+
+
+LAdatalist<-list.files(path="//Lonnetapp01/NDPB OCC Research and Data Analysis Restricted/EHE data request/LA data/", full.names = TRUE)
+
+setwd("//Lonnetapp01/NDPB OCC Research and Data Analysis Restricted/EHE data request/LA data/")
+
+EHEfiles<-rbindlist(pbapply::pblapply(LAdatalist, function(i){
+  readr::read_csv(i)}),fill=TRUE) 
+
+EHEfiles<-EHEfiles[,1:11]
+
+setwd("C:/Users/rgilhooly/OneDrive - Department for Education/Documents/Projects/EHE data request/EHE R Project/")
+
+
+##### Reading and writing tables ######
+
+byPhase %>% select(phase_2018, Rate1718) %>% arrange(desc(Rate1718)) %>%  write.table(file="clipboard", sep="\t", row.names = T)
+
+read.table(file = "clipboard", sep = "\t", header=TRUE)
+
+
+
+##### LAC - LOOPS - Episodes during the year - for (i in c) #####
+
+df <- LACdy
+
+for (i in c(2014:2019)){ 
+  
+  yrval<- rlang::sym(paste0("yr",i))
+  
+  df <- df %>% mutate(!!yrval := ifelse(int_overlaps(ep_interval,
+                                                     
+                                                     interval(epyr$yrstart[epyr$yr== i], epyr$yrend[epyr$yr==i])),1,0)) }
+  
+##### LAC - Ep during the year - distinct child ID & placement type by start date #####
+
+out_placement1<-dyfilt %>% filter(LA_PLACEMENT=="SCO") %>% 
+  select(CHILD_ID,PLACEMENT,LEGAL_STATUS,ep_startdate, yr2014:yr2019) %>%
+  gather(key=year, value=count, yr2014:yr2019) %>% 
+  filter(count==1) %>% distinct() %>% 
+  group_by(CHILD_ID,year) %>% 
+  mutate(min_start=ep_startdate[ep_startdate==min(ep_startdate)],c=n()) %>% 
+  ungroup() %>% filter(ep_startdate==min_start) %>% arrange(CHILD_ID,year) 
+
+out_placement1 %>%
+  group_by(year,PLACEMENT) %>%
+  tally() %>%
+  tidyr::spread(key=year,value=n,fill=0)
+
+##### LOOPS - Lapply and reduce - Doing similar function then left joining results #####
+
+lapply(c(16,17),function(x){
+  
+  x2<-x-1
+  
+  phasV<-rlang::sym(paste0("phase_20",x))
+  eheV<-rlang::sym(paste0("EHE",x2,x,"_clean"))
+  headV<-rlang::sym(paste0("headcount_20",x))
+  
+  newVar<-rlang::sym(paste0("Rate",x2,x))
+  
+  tb<-byPhase2 %>% filter(!is.na(!!phasV)) %>% select(!!phasV, !!eheV, !!headV) %>% group_by(!!phasV) %>% 
+    summarise(n=sum(!!eheV, na.rm=T), pop=sum(!!headV, na.rm = T)) %>% mutate(!!newVar:= (n/pop)*1000) 
+  
+  names(tb)[1]<-"phase"
+  
+  names(tb)[names(tb)=="n"]<-paste0("n_",x)
+  
+  names(tb)[names(tb)=="pop"]<-paste0("pop_",x)
+  tb
+  
+}) %>% purrr::reduce(function(x,y) left_join(x,y,by="phase"))
+
+
+##### Loop through columns + export multiple tables to csv #####
+
+for(i in names(ssdata)){
+  
+  #perc_var <- sym(paste0(i,"_percentage"))
+  
+  
+  df<-ssdata %>% group_by(.data[[i]]) %>%
+    tally() %>%
+    mutate(Percentage = n/sum(n)) %>%
+    rename(Count=n) 
+  
+  
+  write.table(df, file="C:/Users/rgilhooly/OneDrive - Department for Education/Documents/Projects/Business support/Staff Survey/surveyresponse_2019.csv", 
+              col.names = T, row.names=F, sep=",", append=TRUE )
+  
+  cat("\n", file="C:/Users/rgilhooly/OneDrive - Department for Education/Documents/Projects/Business support/Staff Survey/surveyresponse_2019.csv",
+      append=T)
+} 
+
+
+##### Two way tables + paste0 to create string with both count and perc + spread #####
+
+for(i in names(ssqno)){
+  
+  print(ssqno %>% select(.data[[i]], Q7) %>%
+          group_by(Q7,.data[[i]]) %>%
+          tally() %>%
+          mutate(Percentage = n/sum(n)) %>%
+          mutate(val = paste0(round(Percentage*100,digits=1),"%","  ","(", n , ")" )) %>%
+          select(-n, -Percentage) %>% 
+          spread(key=Q7, value= val))} 
+
+
+
+##### Simple write.csv #####
+
+%>% write.csv(., "EHEall152.csv", row.names = F)
+
+
+
+##### Copying tables to/from excel  #####
+
+EHE148 %>% select(EHE1516_clean) %>% write.table(file="clipboard", sep="\t", row.names=F)
+
+read.table(file="clipboard",  sep="\t", header = T)
+
+
+
+##### Distribution (Top 10 LAs accounting for x% of y) #####
+
+
+EHE148 %>% select(LA_name,matches("_clean")) %>%
+  gather(key=yr,val=count,EHE1516_clean:EHE1718_clean) %>%
+  filter(!is.na(count)) %>%
+  group_by(yr, LA_name) %>%
+  arrange(desc(count)) %>%
+  mutate(rw=row_number()) %>%
+  mutate(top1=ifelse(rw<(max(rw)/20),1,0)) %>% ungroup() %>%
+  group_by(yr,top1) %>%
+  summarise(sEHE=sum(count)) %>%
+  mutate(perc=sEHE/sum(sEHE)) %>% filter(top1 == 1)
+
+
+
+##### Regression #####
+
+# summary(data=dataframe, variable you want to predict ~ variables used to predict)
+
+
+##### One way ANOVA - variation school/LA rates - single point in time (152 LAs) #####
+
+aov_sc <- bySchool %>% select(ID_final, Rate1718) %>% mutate(group="School") %>% select(-ID_final)
+aov_la <- byLA %>% select(LA_name, Rate1718) %>% mutate(group="LA") %>% select(-LA_name) 
+aov_all<- bind_rows(aov_sc,aov_la) 
+
+aov_res<- aov(Rate1718 ~ group, data=aov_all)
+summary(aov_res)
+
+
+
+
+##### Pie charts #####
+
+
+summary(lm(data=mhdata,perc_refclosed~average_wait))
+
+pie<-data.frame(letter=c("a","b","c"),perc=c(0.2,0.4,0.4),stringsAsFactors = F)
+
+pie %>%
+  ggplot(aes(x=1,y=perc,fill=letter))+geom_col()+coord_polar(theta="y")+
+  theme_minimal()+
+  theme(axis.text=element_blank(),
+        axis.title = element_blank(),
+        panel.grid=element_blank())
+
+
+
+
+
+
+
+
+
+
+
+
+# FUNCTIONS
+
+##### Adding trend line to graphs (se = standard error)
+# +geom_smooth(method=lm, se=F, colour="skyblue")
+
+##### 1) Financial year dates table #####
+
+yrstart<-seq(dmy("01/04/2011"),dmy("01/04/2017"), by="years")
+yrend<-seq(dmy("31/03/2012"),dmy("31/03/2018"), by="years")
+EPyr<-data.frame(yrstart,yrend,yrval=c(2012:2018))
+
+
+##### CONVERTING INCOME AMOUNTS ####
+
+indresp <- indresp %>% 
+  mutate(monthly_income = ifelse(cb_hhincome_period %in% c(1,5), cb_hhincome_amount*52/12,
+                                 ifelse(cb_hhincome_period == 2, cb_hhincome_amount*26/12, 
+                                        ifelse(cb_hhincome_period == 3, cb_hhincome_amount,
+                                               ifelse(cb_hhincome_period == 4, cb_hhincome_amount/12, NA))))) 
+
+indresp <- indresp %>% mutate(monthly_income =
+                                case_when(cb_hhincome_period %in% c(1,5) ~ cb_hhincome_amount*52/12,
+                                          cb_hhincome_period == 2 ~ cb_hhincome_amount * 26/12,
+                                          cb_hhincome_period == 3 ~ cb_hhincome_amount,
+                                          cb_hhincome_period == 4 ~ cb_hhincome_amount/12,
+                                          cb_hhincome_period %in% c(-1, -2, -8, -9) ~ NA))
+##### 2) Calculate age function #####
+
+calc_age <- function(DoB, ep_endDate = Sys.Date()){
+  require(lubridate)
+  period<-as.period(interval(DoB, ep_endDate),
+                    unit="year")
+  
+  period$year
+}
+
+
+
+
+
+
+
+##### ggplot2 - rotate x labels ####
++theme(axis.text.x = element_text(angle=30, hjust=1))
+
+##### Using WEIGHTS
+
+  # continuous variable
+comp_filt <- sc_eng %>% select(pidp_1pg, ca_chcomputer_1pg, ca_betasch_xw) %>% 
+  group_by(ca_chcomputer_1pg) %>% 
+  mutate(weighted_val = ca_betasch_xw * continuous_var) %>%
+  summarise(weighted_total = sum(weighted_val))
+
+
+  # discrete variables
+comp_filt <- sc_eng %>% select(pidp_1pg, ca_chcomputer_1pg, ca_betasch_xw) %>% 
+  group_by(ca_chcomputer_1pg) %>% 
+  summarise(weighted_total = sum(weighted_val), n = n())
+tally(., wt=ca_betasch_xw) %>% 
+  filter(ca_chcomputer_1pg %in% c(1:3)) %>% 
+  ungroup() %>% 
+  mutate(perc=round((n/sum(n))*100))
+##### ggplot2 - using occ themes #####
+
+ggplot() + scale_fill_occ() + theme_occ()
+
+ggplot() + scale_colour_occ() +theme_occ()
+
+ggplot(df, aes(x = x, y = y, color = group)) +geom_point(size = 2) +
+  
+  geom_line() + 
+  scale_color_occ() +
+  theme_occ()
+
+
+
+
+
+##### ggplot2 - FACET WRAP #####
+
+ggplot(data=ts,aes(x=Time_clean,y=Value_numeric,group=Indicator))+geom_line()+geom_point()+
+  facet_wrap(~Indicator,scales="free")
+
+##### ggplot 2 - FACET WRAP - change text colour and font ####
+ggplot(df_hear,aes(x=value,y=perc,label=paste0(round(perc*100,0),"%"))) +
+  geom_bar(stat="identity",fill=occ_pal[2]) +
+  coord_flip() +
+  geom_text(hjust=-0.1) +
+  facet_wrap(~name,nrow=1) +
+  theme_occ() +
+  xlab("") +
+  ylab("Share (%)") +
+  ylim(0,0.7) +
+  theme(axis.text.x=element_blank(),
+        strip.text.x = element_text(colour = '#202B51', size = 10),
+        # axis.text.x=element_text(colour=c("#202B51"),lineheight = 0.3),
+        axis.text.y=element_text(colour=c("#202B51"),hjust = 1),
+        # axis.title.x=element_text(colour="#202B51",face="bold"),
+        axis.title.y=element_text(colour="#202B51",face="bold"),
+        text=element_text(family="HindVadodara",size=60,colour="#202B51")) +
+  ggtitle ("Among parents who access a specific service, \nwhere did they hear about it?")
+ggsave(here('output','hear.png'),width=8,height=3)
+
+
+##### ggplot2 - grouped bar chart #####
+
+# access by parent gender
+
+ggplot(df_access_gender,aes(x=gender,y=value,fill=name)) +
+  geom_bar(stat="identity",position="dodge") +
+  scale_fill_manual(values=c("white",occ_pal[2],occ_pal[3],occ_pal[5])) +
+  theme_occ() +
+  ylab("Share (%)") +
+  xlab("Parent gender") +
+  theme_classic() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.text.x=element_text(colour=c("white"),lineheight = 0.3),
+        axis.text.y=element_text(colour=c("white"),hjust = 1),
+        axis.title.x=element_text(colour="White",face="bold"),
+        axis.title.y=element_text(colour="White",face="bold"),
+        axis.line.x.bottom=element_line(color="white"),
+        axis.line.y.left=element_line(color="white"),
+        text=element_text(family="HindVadodara",size=60,colour="white"),
+        plot.background = element_rect(fill = "#202B51"),
+        panel.background = element_rect(fill = "#202B51"),
+        legend.background = element_rect(fill = "#202B51"),
+        plot.title = element_text(face="bold"),
+        plot.margin = unit(c(1, 1, 1, 1), "cm"),
+        plot.caption = element_text(colour="grey",lineheight = 0.3)) +
+  geom_text(aes(label=round(value,0)), position=position_dodge(width=0.9), vjust=-0.25, size=12,colour="white")+
+  guides(fill = guide_legend(reverse = FALSE)) +
+  ggtitle(element_text("Figure 3. Gender variation in share of parents with a child under 5 accessing services",face="bold")) +
+  labs(caption = "Source: FSS\n*Estimates unreliable due to sample size")
+ggsave(here('output','access_gender.png'),width=15,height=7)
+
+
+#####
+
+##### GGSAVE image #####
+
+ggsave(here('output','perc_badschool_red.png'), width = 4, height = 7)
+
+#####
+

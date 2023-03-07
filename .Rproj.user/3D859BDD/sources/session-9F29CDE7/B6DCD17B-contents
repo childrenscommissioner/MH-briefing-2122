@@ -1,0 +1,1377 @@
+library(here)
+library(dplyr)
+library(ggplot2)
+library(occresearch)
+library(tidyr)
+library(janitor)
+library(haven)
+library(stringr)
+library(showtext)
+library(kableExtra)
+library(naniar)
+
+##### Set up #####
+
+# Import data 
+df <- read.csv(here('input','RD CC 2906 CR Raw Data v2.csv'))
+names <- read.csv(here('input','names.csv'))
+
+names(df) <- names$New
+
+# Import fonts
+font_add("HindVadodara", here('input','HindVadodara-Regular.ttf'), bold = here('input','HindVadodara-Bold.ttf'))
+showtext_auto()
+windows()
+
+# Drop non-binary because of weighting 
+df <- df %>%
+  clean_names() %>%
+  dplyr::filter(gender %in% c("Male","Female")) %>% 
+  mutate(region=str_trim(region))
+
+
+## Weighting
+source("W:/CCO-WORKING-FS/Projects/big ask survey/analysis/scripts/markdown_functions.R",local=knitr::knit_global())
+
+# import household APS (at an individual level)
+APS <- read_dta('W:/CCO-WORKING-FS/Projects/Family Review national data/input/APS/apsh_jd20_eul_phhwta20.dta')
+
+target_out <- APS %>% #population targets for parents
+  mutate(region=case_when(GOR9D == "E12000001" ~ "North East",
+                          GOR9D == "E12000002" ~ "North West",
+                          GOR9D == "E12000003" ~ "Yorkshire and the Humber",
+                          GOR9D == "E12000004" ~ "East Midlands",
+                          GOR9D == "E12000005" ~ "West Midlands",
+                          GOR9D == "E12000006" ~ "East of England",
+                          GOR9D == "E12000007" ~ "London",
+                          GOR9D == "E12000008" ~ "South East",
+                          GOR9D == "E12000009" ~ "South West"),
+         SEX=case_when(SEX==1~"Male",
+                       SEX==2~"Female"),
+         AGE_group=case_when(AGE>17&AGE<25~"18-24",
+                             AGE<35~"25-34",
+                             AGE<45~"35-44",
+                             AGE<55~"45-54",
+                             AGE<65~"55-64",
+                             AGE>=65~"65+")) %>% 
+  filter(RELHFU %in% c(1,2)&FUTYPE6 %in% c(6,9,10,12,16,19)) %>% 
+  na.omit() %>% 
+  group_by(AGE_group,SEX,region) %>% 
+  count(wt=PHHWTA20) %>% ungroup() %>% 
+  mutate(perc=n/sum(n))
+
+df$wt_out<-paste0(df$region,"_",df$age,"_",df$gender)
+
+target_out$wt_out<-paste0(target_out$region,"_",target_out$AGE_group,"_",target_out$SEX)
+
+t_wt<-target_out$perc
+
+names(t_wt)<-target_out$wt_out
+
+df$id<-seq_len(nrow(df))
+
+df$wt_out<-as.factor(df$wt_out)
+
+t_wt<-t_wt[names(t_wt) %in% df$wt_out]
+
+# Generate weights (with max weight of 10)
+wts<-anesrake::anesrake(list(wt_out=t_wt),df,type="nolim",caseid = df$id,cap=10,convcrit = 0.001)
+
+df$wt<-wts$weightvec
+
+occ_pal <-c("#202B51","#00B388","#F1B434","#753BBD","#0085AD","#D50032") # define colours for bar fills
+
+# create simplified ethnicity variable
+df <- df %>% 
+  mutate(ethnicity_clean=case_when(ethnicity=="Arab"~"Other",
+                                   ethnicity=="Asian or Asian British Bangladeshi"~"Asian",
+                                   ethnicity=="Asian or Asian British Chinese"~"Asian",
+                                   ethnicity=="Asian or Asian British Indian"~"Asian",
+                                   ethnicity=="Asian or Asian British Other"~"Asian",
+                                   ethnicity=="Asian or Asian British Pakistani"~"Asian",
+                                   ethnicity=="Black or Black British African"~"Black",
+                                   ethnicity=="Black or Black British Caribbean "~"Black",
+                                   ethnicity=="Black or Black British Other"~"Black",
+                                   ethnicity=="Mixed / Multiple Other"~"Mixed",
+                                   ethnicity=="Mixed / Multiple White and Asian"~"Mixed",
+                                   ethnicity=="Mixed / Multiple White and Black African"~"Mixed",
+                                   ethnicity=="Mixed / Multiple White and Black Caribbean"~"Mixed",
+                                   ethnicity=="Other ethnicity"~"Other",
+                                   ethnicity=="White British"~"White",
+                                   ethnicity=="White Irish"~"White",
+                                   ethnicity=="White Other"~"White",
+                                   ethnicity=="White Other"~"White",
+                                   ethnicity=="White Romani / Traveller / Irish traveller"~"White"))
+
+# replace all prefer not to say with NA
+
+df <- df %>% replace_with_na_all(condition = ~.x %in% c("Prefer not to say"))
+
+# create child age group variable
+df <- df %>% 
+  mutate(child_agegroup = ifelse(child_age %in% c("Under 1 year  ","1","2","3","4","5"),"0 to 5",
+                                 ifelse(child_age %in% c("6","7","8","9"),"6 to 9",
+                                        ifelse(child_age %in% c("10","11","12","13","14"),"10 to 14","15 to 17"))))
+
+df <- df %>%  
+  mutate(child_agegroup = factor(child_agegroup,levels = c("0 to 5", "6 to 9","10 to 14","15 to 17")))
+
+
+writetable <- function(x){
+  
+  x %>% write.table(file="clipboard", sep="\t", row.names=F)}
+
+#####
+
+##### Analysis 
+
+##### Demographics #####
+
+# unweighted count
+
+dem_summary_uw <- df %>% 
+  group_by(age) %>% 
+  tally() %>% 
+  mutate(perc=n/sum(n)*100) %>% 
+  rename(Group = age,
+         variable = n) %>% 
+  rbind(df %>% 
+          group_by(gender) %>% 
+          tally() %>% 
+          mutate(perc=n/sum(n)*100) %>% 
+          rename(Group = gender,
+                 variable = n)) %>% 
+  rbind(df %>% 
+          group_by(ethnicity_clean) %>% 
+          tally() %>% 
+          mutate(perc=n/sum(n)*100) %>% 
+          rename(Group = ethnicity_clean,
+                 variable = n)) %>%
+  rbind(df %>% 
+          group_by(region) %>% 
+          tally() %>% 
+          mutate(perc=n/sum(n)*100) %>% 
+          rename(Group = region,
+                 variable = n)) %>% 
+  rbind(df %>% 
+          group_by(n_child) %>% 
+          tally() %>% 
+          mutate(perc=n/sum(n)*100) %>% 
+          rename(Group = n_child,
+                 variable = n)) %>%
+  rbind(df %>% 
+          group_by(employment) %>% 
+          tally() %>% 
+          mutate(perc=n/sum(n)*100) %>% 
+          rename(Group = employment,
+                 variable = n)) %>%
+  rename(Count = variable,
+         Percentage = perc) %>% 
+  mutate(Percentage = round(Percentage,0))
+
+
+
+# weighted summary
+dem_summary <- df %>% 
+  group_by(age) %>% 
+  tally(wt=wt) %>% 
+  mutate(perc=n/sum(n)*100) %>% 
+  rename(Group = age,
+         variable = n) %>% 
+  rbind(df %>% 
+          group_by(gender) %>% 
+          tally(wt=wt) %>% 
+          mutate(perc=n/sum(n)*100) %>% 
+          rename(Group = gender,
+                 variable = n)) %>% 
+  rbind(df %>% 
+          group_by(ethnicity_clean) %>% 
+          tally(wt=wt) %>% 
+          mutate(perc=n/sum(n)*100) %>% 
+          rename(Group = ethnicity_clean,
+                 variable = n)) %>%
+  rbind(df %>% 
+          group_by(region) %>% 
+          tally(wt=wt) %>% 
+          mutate(perc=n/sum(n)*100) %>% 
+          rename(Group = region,
+                 variable = n)) %>% 
+  rbind(df %>% 
+          group_by(n_child) %>% 
+          tally(wt=wt) %>% 
+          mutate(perc=n/sum(n)*100) %>% 
+          rename(Group = n_child,
+                 variable = n)) %>%
+  rbind(df %>% 
+          group_by(employment) %>% 
+          tally(wt=wt) %>% 
+          mutate(perc=n/sum(n)*100) %>% 
+          rename(Group = employment,
+                 variable = n)) %>%
+  rename(Count = variable,
+         Percentage = perc)
+
+#####
+
+### Access of services ###
+
+
+#### filter play group to children < age 5 all but antenatal and parenting course?
+# check ethnicity, children's age, gender of parents, region
+# facets charts, bar - 
+
+df_access_all <- df %>% select(contains("access")|wt|child_age|child_agegroup|gender|child_age|region|employment|ethnicity_clean) 
+
+# convert all access vars to binary 
+
+df_access_all <- df_access_all %>% 
+  mutate_at(vars(access_antenatal:access_childrenscentre),~ifelse(.x %in% c("","No", "Don't know"),0,1))
+
+# overall access rate table - filter non-course based services to child_age 5 and under
+
+df_access_summary <- df_access_all %>% filter(!is.na(access_antenatal)) %>% group_by(access_antenatal) %>% tally(wt=wt) %>% 
+  mutate(Percentage=n/sum(n)*100) %>% 
+  rename(Access = access_antenatal) %>% 
+  mutate(Service = paste0("Antenatal course")) %>% 
+  rbind(df_access_all %>% filter(!is.na(access_parenting)) %>% group_by(access_parenting) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_parenting) %>%
+          mutate(Service = paste0("Parenting course"))) %>% 
+  rbind(df_access_all %>% filter(!is.na(access_shortbreak)) %>%
+          group_by(access_shortbreak) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_shortbreak) %>%
+          mutate(Service = paste0("Short-break services"))) %>% 
+  rbind(df_access_all %>% filter(!is.na(access_playgroup)) %>% 
+          filter(child_age=="Under 1 year  "|child_age=="1"|child_age=="2"|child_age=="3"|child_age=="4"|child_age=="5") %>% 
+          group_by(access_playgroup) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_playgroup) %>%
+          mutate(Service = paste0("Playgroup"))) %>%  
+  rbind(df_access_all %>% filter(!is.na(access_supportgroup)) %>%
+          group_by(access_supportgroup) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_supportgroup) %>%
+          mutate(Service = paste0("Support group"))) %>%    
+  rbind(df_access_all %>% filter(!is.na(access_healthvisitoradditional)) %>%
+          filter(child_age=="Under 1 year  "|child_age=="1"|child_age=="2"|child_age=="3"|child_age=="4"|child_age=="5") %>% 
+          group_by(access_healthvisitoradditional) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_healthvisitoradditional) %>%
+          mutate(Service = paste0("Health visitor service"))) %>%    
+  rbind(df_access_all %>% filter(!is.na(access_parentalconflict)) %>%
+          group_by(access_parentalconflict) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_parentalconflict) %>%
+          mutate(Service = paste0("Parental conflict support"))) %>% 
+  rbind(df_access_all %>% filter(!is.na(access_childrenscentre)) %>%
+          filter(child_age=="Under 1 year  "|child_age=="1"|child_age=="2"|child_age=="3"|child_age=="4"|child_age=="5") %>% 
+          group_by(access_childrenscentre) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_childrenscentre) %>%
+          mutate(Service = paste0("Children's centre"))) %>% 
+  rbind(df_access_all %>% filter(!is.na(access_online)) %>%
+          group_by(access_online) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_online) %>%
+          mutate(Service = paste0("Online support"))) %>% 
+  rbind(df_access_all %>% filter(!is.na(access_none)) %>% 
+          group_by(access_none) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_none) %>%
+          mutate(Service = paste0("Accessed no services"))) %>% 
+  filter(Access %in% c("1")) %>% 
+  select(Service,n,Percentage) %>% 
+  rename(Count = n) %>% 
+  mutate(Percentage = round(Percentage,1)) %>% 
+  arrange(desc(Percentage))
+
+
+# save to outputs
+
+write.csv(df_access_summary, here('output','access_summary.csv'), row.names = F)
+
+
+## overall access rate table - filter all to child age under 1 #####
+
+df_access_summary_u1 <- df_access_all %>% filter(!is.na(access_antenatal)) %>%
+  filter(child_age=="Under 1 year  ") %>% 
+  group_by(access_antenatal) %>% tally(wt=wt) %>% 
+  mutate(Percentage=n/sum(n)*100) %>% 
+  rename(Access = access_antenatal) %>% 
+  mutate(Service = paste0("Antenatal course")) %>% 
+  rbind(df_access_all %>% filter(!is.na(access_parenting)) %>% 
+          filter(child_age=="Under 1 year  ") %>% 
+          group_by(access_parenting) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_parenting) %>%
+          mutate(Service = paste0("Parenting course"))) %>% 
+  rbind(df_access_all %>% filter(!is.na(access_shortbreak)) %>%
+          filter(child_age=="Under 1 year  ") %>% 
+          group_by(access_shortbreak) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_shortbreak) %>%
+          mutate(Service = paste0("Short-break services"))) %>% 
+  rbind(df_access_all %>% filter(!is.na(access_playgroup)) %>% 
+          filter(child_age=="Under 1 year  ") %>% 
+          group_by(access_playgroup) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_playgroup) %>%
+          mutate(Service = paste0("Playgroup"))) %>%  
+  rbind(df_access_all %>% filter(!is.na(access_supportgroup)) %>%
+          filter(child_age=="Under 1 year  ") %>% 
+          group_by(access_supportgroup) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_supportgroup) %>%
+          mutate(Service = paste0("Support group"))) %>%    
+  rbind(df_access_all %>% filter(!is.na(access_healthvisitoradditional)) %>%
+          filter(child_age=="Under 1 year  ") %>% 
+          group_by(access_healthvisitoradditional) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_healthvisitoradditional) %>%
+          mutate(Service = paste0("Health visitor service"))) %>%    
+  rbind(df_access_all %>% filter(!is.na(access_parentalconflict)) %>%
+          filter(child_age=="Under 1 year  ") %>% 
+          group_by(access_parentalconflict) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_parentalconflict) %>%
+          mutate(Service = paste0("Parental conflict support"))) %>% 
+  rbind(df_access_all %>% filter(!is.na(access_childrenscentre)) %>%
+          filter(child_age=="Under 1 year  ") %>% 
+          group_by(access_childrenscentre) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_childrenscentre) %>%
+          mutate(Service = paste0("Children's centre"))) %>% 
+  rbind(df_access_all %>% filter(!is.na(access_online)) %>%
+          filter(child_age=="Under 1 year  ") %>% 
+          group_by(access_online) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_online) %>%
+          mutate(Service = paste0("Online support"))) %>% 
+  rbind(df_access_all %>% filter(!is.na(access_none)) %>% 
+          filter(child_age=="Under 1 year  ") %>% 
+          group_by(access_none) %>% tally(wt=wt) %>% 
+          mutate(Percentage=n/sum(n)*100) %>% 
+          rename(Access = access_none) %>%
+          mutate(Service = paste0("Accessed no services"))) %>% 
+  filter(Access %in% c("1")) %>% 
+  select(Service,n,Percentage) %>% 
+  rename(Count = n) %>% 
+  mutate(Percentage = round(Percentage,1)) %>% 
+  arrange(desc(Percentage))
+
+# save to outputs
+
+write.csv(df_access_summary_u1, here('output','access_summary_under1.csv'), row.names = F)
+
+#####
+  
+### access by region
+
+df_access_all %>% group_by(region) %>% summarise_at(vars(access_antenatal:access_childrenscentre),~weighted.mean(.x,wt,na.rm=T))
+
+
+df_access_reg <- df %>% 
+  filter(child_age=="Under 1 year  "|child_age=="1"|child_age=="2"|child_age=="3"|child_age=="4"|child_age=="5") %>%
+  mutate(region=ifelse(region=="Yorkshire and the Humber","Yorkshire and\nthe Humber",region),
+         region=ifelse(region=="North East","North East*",region),
+         region=ifelse(region=="South West","South West*",region)) %>% 
+  mutate_at(vars(access_parenting,access_supportgroup,access_playgroup),~ifelse(.x=="",0,1)) %>% 
+  group_by(region) %>% 
+  summarise(access_parenting=weighted.mean(access_parenting,weight=wt),
+            access_supportgroup=weighted.mean(access_supportgroup,weight=wt),
+            access_playgroup=weighted.mean(access_playgroup,weight=wt)) %>% 
+  pivot_longer(cols=c(access_parenting,
+                      access_supportgroup,access_playgroup)) %>% 
+  mutate(name=case_when(name=="access_parenting"~"Parenting course",
+                        name=="access_supportgroup"~"Support group",
+                        name=="access_playgroup"~"Playgroup"),
+         value=value*100)
+
+### access by ethnicity
+
+df_access_eth <- df_access_all %>% 
+  filter(child_age %in% c("Under 1 year  ","1","2","3","4","5"),
+         #filter out others due to low sample size (8 respondents)
+         !ethnicity_clean %in% c("Other")) %>%
+  group_by(ethnicity_clean) %>%
+  summarise_at(vars(access_antenatal:access_childrenscentre),~weighted.mean(.x,wt,na.rm=T)) %>% 
+  mutate_at(vars(access_antenatal:access_childrenscentre),~.x*100,1) %>% 
+  select(ethnicity_clean, access_parenting,access_playgroup,access_online, access_parentalconflict, access_childrenscentre) %>% 
+  pivot_longer(cols= c(access_parenting,access_playgroup,access_online, access_parentalconflict, access_childrenscentre)) %>% 
+  mutate(name=case_when(name=="access_parenting"~"Parenting course",
+                        name=="access_online"~"Online support",
+                        name=="access_playgroup"~"Playgroup",
+                        name=="access_parentalconflict"~"Parental conflict support",
+                        name=="access_childrenscentre"~"Children's centre"))
+
+
+### access by child age
+
+# Age 5 and under
+
+df_access_cage <- df_access_all %>% 
+  filter(child_age %in% c("Under 1 year  ","1","2","3","4","5")) %>% group_by(child_age) %>%
+  mutate(child_age = factor(child_age,levels = c("Under 1 year  ", "1","2","3","4","5"))) %>% 
+  summarise_at(vars(access_antenatal:access_childrenscentre),~weighted.mean(.x,wt,na.rm=T)) %>% 
+  mutate_at(vars(access_antenatal:access_childrenscentre),~.x*100,1) %>% 
+  select(child_age, access_parenting,access_playgroup,access_supportgroup,access_online) %>% 
+  pivot_longer(cols= c(access_parenting,access_playgroup, access_supportgroup,access_online)) %>% 
+  mutate(name=case_when(name=="access_parenting"~"Parenting course",
+                        name=="access_online"~"Online support",
+                        name=="access_supportgroup"~"Support group",
+                        name=="access_playgroup"~"Playgroup"))
+  
+# age 6 and up - check
+
+df_access_cage_6up <- df_access_all %>% 
+  filter(child_agegroup %in% c("6 to 9","10 to 14","15 to 17")) %>% group_by(child_agegroup) %>%
+  mutate(child_agegroup = factor(child_agegroup,levels = c("6 to 9","10 to 14","15 to 17"))) %>% 
+  summarise_at(vars(access_antenatal:access_childrenscentre),~weighted.mean(.x,wt,na.rm=T)) %>% 
+  mutate_at(vars(access_antenatal:access_childrenscentre),~.x*100,1) %>% 
+  select(child_agegroup, access_parenting,access_playgroup,access_supportgroup,access_online) %>% 
+  pivot_longer(cols= c(access_parenting,access_playgroup, access_supportgroup,access_online)) %>% 
+  mutate(name=case_when(name=="access_parenting"~"Parenting course",
+                        name=="access_online"~"Online support",
+                        name=="access_supportgroup"~"Support group",
+                        name=="access_playgroup"~"Playgroup"))
+
+### access by parent gender
+
+df_access_gender <- df_access_all %>% 
+  filter(child_age %in% c("Under 1 year  ","1","2","3","4","5")) %>% group_by(gender) %>%
+#  mutate(child_age = factor(child_age,levels = c("Under 1 year  ", "1","2","3","4","5"))) %>% 
+  summarise_at(vars(access_antenatal:access_childrenscentre),~weighted.mean(.x,wt,na.rm=T)) %>% 
+  mutate_at(vars(access_antenatal:access_childrenscentre),~.x*100,1) %>% 
+  select(gender, access_parenting,access_playgroup,access_supportgroup,access_online,access_parentalconflict) %>% 
+  pivot_longer(cols= c(access_parenting,access_playgroup, access_supportgroup,access_online)) %>% 
+  mutate(name=case_when(name=="access_parenting"~"Parenting course",
+                        name=="access_online"~"Online support",
+                        name=="access_supportgroup"~"Support group",
+                        name=="access_playgroup"~"Playgroup",
+                        name=="access_parentalconflict"~"Parental conflict support")) 
+
+### access by parent employment
+
+df_access_employment<- df_access_all %>% 
+  filter(child_age %in% c("Under 1 year  ","1","2","3","4","5"),
+         #filter employment due to low sample size
+         employment %in% c("Full-time employed","Part-time employed","Homemaker")) %>%
+  group_by(employment) %>%
+  #  mutate(child_age = factor(child_age,levels = c("Under 1 year  ", "1","2","3","4","5"))) %>% 
+  summarise_at(vars(access_antenatal:access_childrenscentre),~weighted.mean(.x,wt,na.rm=T)) %>% 
+  mutate_at(vars(access_antenatal:access_childrenscentre),~.x*100,1) %>% 
+  select(employment, access_parenting,access_playgroup,access_supportgroup,access_online,access_parentalconflict,access_none) %>% 
+  pivot_longer(cols= c(access_parenting,access_playgroup, access_supportgroup,access_online,access_none)) %>% 
+  mutate(name=case_when(name=="access_parenting"~"Parenting course",
+                        name=="access_online"~"Online support",
+                        name=="access_supportgroup"~"Support group",
+                        name=="access_playgroup"~"Playgroup",
+                        name=="access_parentalconflict"~"Parental conflict support",
+                        name=="access_none"~ "No services accessed")) 
+
+
+#####
+
+##### How did parents hear about the services ####
+
+## How did you hear about it? - overall ####
+df_hear <- df %>% 
+  dplyr::select(hear_antenatal,wt) %>% 
+  pivot_longer(cols=hear_antenatal) %>% 
+  filter(value!="",!is.na(value)) %>% 
+  group_by(name,value) %>% 
+  count(wt=wt) %>% ungroup() %>% 
+  mutate(perc=n/sum(n)) %>% 
+  filter(!value %in% c("Prefer not to say","Other","I don't know")) %>%
+  mutate(value=ifelse(value=="Someone from your local council","Local council",value)) %>% 
+  rbind(df %>% 
+          dplyr::select(hear_parenting,wt) %>% 
+          pivot_longer(cols=hear_parenting) %>% 
+          filter(value!="",!is.na(value)) %>% 
+          group_by(name,value) %>% 
+          count(wt=wt) %>% ungroup() %>% 
+          mutate(perc=n/sum(n)) %>% 
+          filter(!value %in% c("Prefer not to say","Other","I don't know")) %>%
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(hear_supportgroup,wt) %>% 
+          pivot_longer(cols=hear_supportgroup) %>% 
+          filter(value!="",!is.na(value)) %>% 
+          group_by(name,value) %>% 
+          count(wt=wt) %>% ungroup() %>% 
+          mutate(perc=n/sum(n)) %>% 
+          filter(!value %in% c("Prefer not to say","Other","I don't know")) %>%
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(hear_playgroup,wt) %>% 
+          pivot_longer(cols=hear_playgroup) %>% 
+          filter(value!="",!is.na(value)) %>% 
+          group_by(name,value) %>% 
+          count(wt=wt) %>% ungroup() %>% 
+          mutate(perc=n/sum(n)) %>% 
+          filter(!value %in% c("Prefer not to say","Other","I don't know")) %>%
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  mutate(name=case_when(name=="hear_antenatal"~"Antenatal course",
+                        name=="hear_parenting"~"Parenting course",
+                        name=="hear_supportgroup"~"Support group",
+                        name=="hear_playgroup"~"Playgroup"))
+
+#####
+
+## How did you hear about it? - gender ####
+
+df_hear_gender <- df %>% 
+  select(hear_antenatal,wt,gender) %>% 
+  pivot_longer(cols=hear_antenatal) %>% 
+  filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+  group_by(name,gender) %>% 
+  count(value,wt=wt) %>% 
+  mutate(perc=n/sum(n)) %>% 
+  mutate(value=ifelse(value=="Someone from your local council","Local council",value)) %>% 
+  rbind(df %>% 
+          dplyr::select(hear_parenting,wt,gender) %>% 
+          pivot_longer(cols=hear_parenting) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,gender) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(hear_supportgroup,wt,gender) %>% 
+          pivot_longer(cols=hear_supportgroup) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,gender) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(hear_playgroup,wt,gender) %>% 
+          pivot_longer(cols=hear_playgroup) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,gender) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  mutate(name=case_when(name=="hear_antenatal"~"Antenatal course",
+                        name=="hear_parenting"~"Parenting course",
+                        name=="hear_supportgroup"~"Support group",
+                        name=="hear_playgroup"~"Playgroup")) %>% 
+  mutate(perc=perc*100) %>% 
+  mutate(label = paste0(round(perc)))
+
+#####
+
+#####
+
+##### Who delivered the services? #####
+
+
+# overall
+df_delivered <- df %>% 
+  select(delivered_antenatal:delivered_supportgroup,wt) %>% 
+  pivot_longer(cols=delivered_antenatal:delivered_supportgroup,names_to="name",values_to="value") %>% 
+  filter(value!="",!is.na(value)) %>% 
+  group_by(name,value) %>% 
+  tally(wt=wt) %>% 
+  group_by(name) %>% 
+  mutate(perc=n/sum(n)) %>%
+  filter(!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+  mutate(value=ifelse(value=="Local church or religious group","Local church",value)) %>%
+  mutate(name=case_when(name=="delivered_antenatal"~"Antenatal course",
+                        name=="delivered_parenting"~"Parenting course",
+                        name=="delivered_shortbreak"~"Short break",
+                        name=="delivered_supportgroup"~"Support group",
+                        name=="delivered_playgroup"~"Playgroup")) %>% 
+  filter(!name %in% c("Short break"))
+
+
+# gender
+
+df_delivered_gender <- df %>% 
+  select(delivered_antenatal,wt,gender) %>% 
+  pivot_longer(cols=delivered_antenatal) %>% 
+  filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+  group_by(name,gender) %>% 
+  count(value,wt=wt) %>% 
+  mutate(perc=n/sum(n)) %>% 
+  mutate(value=ifelse(value=="Someone from your local council","Local council",value)) %>% 
+  rbind(df %>% 
+          dplyr::select(delivered_parenting,wt,gender) %>% 
+          pivot_longer(cols=delivered_parenting) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,gender) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(delivered_supportgroup,wt,gender) %>% 
+          pivot_longer(cols=delivered_supportgroup) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,gender) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(delivered_playgroup,wt,gender) %>% 
+          pivot_longer(cols=delivered_playgroup) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,gender) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  mutate(name=case_when(name=="delivered_antenatal"~"Antenatal course",
+                        name=="delivered_parenting"~"Parenting course",
+                        name=="delivered_supportgroup"~"Support group",
+                        name=="delivered_playgroup"~"Playgroup")) %>% 
+  mutate(perc=perc*100) %>% 
+  mutate(label = paste0(round(perc)))
+
+##### What are the barriers preventing parents from accessing available services? ####
+
+
+# overall
+df_barrier <- df %>% 
+  select(barrier_antenatal,wt) %>% 
+  pivot_longer(cols=barrier_antenatal) %>% 
+  filter(value!="",!is.na(value)) %>% 
+  group_by(name,value) %>% 
+  count(wt=wt) %>% ungroup() %>% 
+  mutate(perc=n/sum(n)) %>% 
+  filter(!value %in% c("Prefer not to say","Other","I don't know")) %>%
+  mutate(value=ifelse(value=="Someone from your local council","Local council",value)) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_parenting,wt) %>% 
+          pivot_longer(cols=barrier_parenting) %>% 
+          filter(value!="",!is.na(value)) %>% 
+          group_by(name,value) %>% 
+          count(wt=wt) %>% ungroup() %>% 
+          mutate(perc=n/sum(n)) %>% 
+          filter(!value %in% c("Prefer not to say","Other","I don't know")) %>%
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_supportgroup,wt) %>% 
+          pivot_longer(cols=barrier_supportgroup) %>% 
+          filter(value!="",!is.na(value)) %>% 
+          group_by(name,value) %>% 
+          count(wt=wt) %>% ungroup() %>% 
+          mutate(perc=n/sum(n)) %>% 
+          filter(!value %in% c("Prefer not to say","Other","I don't know")) %>%
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_playgroup,wt) %>% 
+          pivot_longer(cols=barrier_playgroup) %>% 
+          filter(value!="",!is.na(value)) %>% 
+          group_by(name,value) %>% 
+          count(wt=wt) %>% ungroup() %>% 
+          mutate(perc=n/sum(n)) %>% 
+          filter(!value %in% c("Prefer not to say","Other","I don't know")) %>%
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  filter(!value %in% c("None of the above")) %>% 
+  mutate(value=ifelse(value=="Timing of service clashes with working hours or other family commitments","Timing of service",value)) %>% 
+  mutate(value=ifelse(value=="I didn't know this service existed","Didn't know service existed",value)) %>%
+  mutate(value=ifelse(value=="I don't think I would fit in at this service","Didn't think I would fit in",value)) %>%
+  mutate(value=ifelse(value=="My family hasn't needed it","My family hasn't needed it",value)) %>%
+  mutate(name=case_when(name=="barrier_antenatal"~"Antenatal course",
+                        name=="barrier_parenting"~"Parenting course",
+                        name=="barrier_supportgroup"~"Support group",
+                        name=="barrier_playgroup"~"Playgroup")) %>% 
+  mutate(value=factor(value,levels=c("Too far to travel","Timing of service","Didn't think I would fit in","Didn't know service existed","My family hasn't needed it","None of the above")))
+
+# overall - childage under 1
+df_barrier_u1 <- df %>% 
+  filter(child_age %in% c("Under 1 year  ")) %>% 
+  select(barrier_antenatal,wt) %>% 
+  pivot_longer(cols=barrier_antenatal) %>% 
+  filter(value!="",!is.na(value)) %>% 
+  group_by(name,value) %>% 
+  count(wt=wt) %>% ungroup() %>% 
+  mutate(perc=n/sum(n)) %>% 
+  filter(!value %in% c("Prefer not to say","Other","I don't know")) %>%
+  mutate(value=ifelse(value=="Someone from your local council","Local council",value)) %>% 
+  rbind(df %>% 
+          filter(child_age %in% c("Under 1 year  ")) %>% 
+          dplyr::select(barrier_parenting,wt) %>% 
+          pivot_longer(cols=barrier_parenting) %>% 
+          filter(value!="",!is.na(value)) %>% 
+          group_by(name,value) %>% 
+          count(wt=wt) %>% ungroup() %>% 
+          mutate(perc=n/sum(n)) %>% 
+          filter(!value %in% c("Prefer not to say","Other","I don't know")) %>%
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          filter(child_age %in% c("Under 1 year  ")) %>% 
+          dplyr::select(barrier_supportgroup,wt) %>% 
+          pivot_longer(cols=barrier_supportgroup) %>% 
+          filter(value!="",!is.na(value)) %>% 
+          group_by(name,value) %>% 
+          count(wt=wt) %>% ungroup() %>% 
+          mutate(perc=n/sum(n)) %>% 
+          filter(!value %in% c("Prefer not to say","Other","I don't know")) %>%
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          filter(child_age %in% c("Under 1 year  ")) %>% 
+          dplyr::select(barrier_playgroup,wt) %>% 
+          pivot_longer(cols=barrier_playgroup) %>% 
+          filter(value!="",!is.na(value)) %>% 
+          group_by(name,value) %>% 
+          count(wt=wt) %>% ungroup() %>% 
+          mutate(perc=n/sum(n)) %>% 
+          filter(!value %in% c("Prefer not to say","Other","I don't know")) %>%
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  filter(!value %in% c("None of the above")) %>% 
+  mutate(value=ifelse(value=="Timing of service clashes with working hours or other family commitments","Timing of service",value)) %>% 
+  mutate(value=ifelse(value=="I didn't know this service existed","Didn't know service existed",value)) %>%
+  mutate(value=ifelse(value=="I don't think I would fit in at this service","Didn't think I would fit in",value)) %>%
+  mutate(value=ifelse(value=="My family hasn't needed it","My family hasn't needed it",value)) %>%
+  mutate(name=case_when(name=="barrier_antenatal"~"Antenatal course",
+                        name=="barrier_parenting"~"Parenting course",
+                        name=="barrier_supportgroup"~"Support group",
+                        name=="barrier_playgroup"~"Playgroup")) %>% 
+  mutate(value=factor(value,levels=c("Too far to travel","Timing of service","Didn't think I would fit in","Didn't know service existed","My family hasn't needed it","None of the above")))
+
+
+## barriers by region ####
+
+df_barrier_reg <- df %>% 
+  select(barrier_antenatal,wt,region) %>% 
+  pivot_longer(cols=barrier_antenatal) %>% 
+  filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+  group_by(name,region) %>% 
+  count(value,wt=wt) %>% 
+  mutate(perc=n/sum(n)) %>% 
+  mutate(value=ifelse(value=="Someone from your local council","Local council",value)) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_parenting,wt,region) %>% 
+          pivot_longer(cols=barrier_parenting) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,region) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_supportgroup,wt,region) %>% 
+          pivot_longer(cols=barrier_supportgroup) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,region) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_playgroup,wt,region) %>% 
+          pivot_longer(cols=barrier_playgroup) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,region) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  mutate(value=ifelse(value=="Timing of service clashes with working hours or other family commitments","Timing of service",value)) %>% 
+  mutate(value=ifelse(value=="I didn't know this service existed","Didn't know service existed",value)) %>%
+  mutate(value=ifelse(value=="I don't think I would fit in at this service","Didn't think I would fit in",value)) %>%
+  mutate(value=ifelse(value=="My family hasn't needed it","My family hasn't needed it",value)) %>%
+  mutate(name=case_when(name=="barrier_antenatal"~"Antenatal course",
+                        name=="barrier_parenting"~"Parenting course",
+                        name=="barrier_supportgroup"~"Support group",
+                        name=="barrier_playgroup"~"Playgroup")) %>% 
+  mutate(perc=perc*100) %>% 
+  mutate(label = paste0(round(perc))) %>% 
+  mutate(value=factor(value,levels=c("Too far to travel","Timing of service","Didn't think I would fit in","Didn't know service existed","My family hasn't needed it","None of the above")))
+
+#####
+
+
+#####
+
+## barriers by child age #### 
+
+
+df_barrier_childage <- df %>% 
+  select(barrier_antenatal,wt,child_agegroup) %>% 
+  pivot_longer(cols=barrier_antenatal) %>% 
+  filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+  group_by(name,child_agegroup) %>% 
+  count(value,wt=wt) %>% 
+  mutate(perc=n/sum(n)) %>% 
+  mutate(value=ifelse(value=="Someone from your local council","Local council",value)) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_parenting,wt,child_agegroup) %>% 
+          pivot_longer(cols=barrier_parenting) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,child_agegroup) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_supportgroup,wt,child_agegroup) %>% 
+          pivot_longer(cols=barrier_supportgroup) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,child_agegroup) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_playgroup,wt,child_agegroup) %>% 
+          pivot_longer(cols=barrier_playgroup) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,child_agegroup) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  mutate(value=ifelse(value=="Timing of service clashes with working hours or other family commitments","Timing of service",value)) %>% 
+  mutate(value=ifelse(value=="I didn't know this service existed","Didn't know service existed",value)) %>%
+  mutate(value=ifelse(value=="I don't think I would fit in at this service","Didn't think I would fit in",value)) %>%
+  mutate(value=ifelse(value=="My family hasn't needed it","My family hasn't needed it",value)) %>%
+  mutate(name=case_when(name=="barrier_antenatal"~"Antenatal course",
+                        name=="barrier_parenting"~"Parenting course",
+                        name=="barrier_supportgroup"~"Support group",
+                        name=="barrier_playgroup"~"Playgroup")) %>% 
+  mutate(perc=perc*100) %>% 
+  mutate(label = paste0(round(perc))) %>% 
+  mutate(value=factor(value,levels=c("Too far to travel","Timing of service","Didn't think I would fit in","Didn't know service existed","My family hasn't needed it","None of the above")))
+
+#####
+
+## Barriers by parent gender ####
+
+df_barrier_gender <- df %>% 
+  select(barrier_antenatal,wt,gender) %>% 
+  pivot_longer(cols=barrier_antenatal) %>% 
+  filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+  group_by(name,gender) %>% 
+  count(value,wt=wt) %>% 
+  mutate(perc=n/sum(n)) %>% 
+  mutate(value=ifelse(value=="Someone from your local council","Local council",value)) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_parenting,wt,gender) %>% 
+          pivot_longer(cols=barrier_parenting) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,gender) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_supportgroup,wt,gender) %>% 
+          pivot_longer(cols=barrier_supportgroup) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,gender) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_playgroup,wt,gender) %>% 
+          pivot_longer(cols=barrier_playgroup) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,gender) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  mutate(value=ifelse(value=="Timing of service clashes with working hours or other family commitments","Timing of service",value)) %>% 
+  mutate(value=ifelse(value=="I didn't know this service existed","Didn't know service existed",value)) %>%
+  mutate(value=ifelse(value=="I don't think I would fit in at this service","Didn't think I would fit in",value)) %>%
+  mutate(value=ifelse(value=="My family hasn't needed it","My family hasn't needed it",value)) %>%
+  mutate(name=case_when(name=="barrier_antenatal"~"Antenatal course",
+                        name=="barrier_parenting"~"Parenting course",
+                        name=="barrier_supportgroup"~"Support group",
+                        name=="barrier_playgroup"~"Playgroup")) %>% 
+  mutate(perc=perc*100) %>% 
+  mutate(label = paste0(round(perc))) %>% 
+  mutate(value=factor(value,levels=c("Too far to travel","Timing of service","Didn't think I would fit in","Didn't know service existed","My family hasn't needed it","None of the above")))
+
+
+# create wide table
+
+df_barrier %>% 
+  select(name,value, perc) %>% 
+  mutate(perc = round(perc*100,0)) %>% 
+  pivot_wider(names_from = value, values_from = perc) 
+
+#####
+
+## Barriers by parent employment ####
+
+df_barrier_employment <- df %>% 
+  select(barrier_antenatal,wt,employment) %>% 
+  pivot_longer(cols=barrier_antenatal) %>% 
+  filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+  group_by(name,employment) %>% 
+  count(value,wt=wt) %>% 
+  mutate(perc=n/sum(n)) %>% 
+  mutate(value=ifelse(value=="Someone from your local council","Local council",value)) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_parenting,wt,employment) %>% 
+          pivot_longer(cols=barrier_parenting) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,employment) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_supportgroup,wt,employment) %>% 
+          pivot_longer(cols=barrier_supportgroup) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,employment) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  rbind(df %>% 
+          dplyr::select(barrier_playgroup,wt,employment) %>% 
+          pivot_longer(cols=barrier_playgroup) %>% 
+          filter(value!="",!is.na(value),!value %in% c("Prefer not to say","Other","I don't know")) %>% 
+          group_by(name,employment) %>% 
+          count(value,wt=wt) %>% 
+          mutate(perc=n/sum(n)) %>% 
+          mutate(value=ifelse(value=="Someone from your local council","Local council",value))) %>% 
+  mutate(value=ifelse(value=="Timing of service clashes with working hours or other family commitments","Timing of service",value)) %>% 
+  mutate(value=ifelse(value=="I didn't know this service existed","Didn't know service existed",value)) %>%
+  mutate(value=ifelse(value=="I don't think I would fit in at this service","Didn't think I would fit in",value)) %>%
+  mutate(value=ifelse(value=="My family hasn't needed it","My family hasn't needed it",value)) %>%
+  mutate(name=case_when(name=="barrier_antenatal"~"Antenatal course",
+                        name=="barrier_parenting"~"Parenting course",
+                        name=="barrier_supportgroup"~"Support group",
+                        name=="barrier_playgroup"~"Playgroup")) %>% 
+  mutate(perc=perc*100) %>% 
+  mutate(label = paste0(round(perc))) %>% 
+  mutate(value=factor(value,levels=c("Too far to travel","Timing of service","Didn't think I would fit in","Didn't know service existed","My family hasn't needed it","None of the above")))
+
+
+####
+
+
+##### Charts #####
+
+##### Access of services ####
+
+## Access by region ####
+
+ggplot(df_access_reg,aes(x=region,y=value,fill=name)) +
+  geom_bar(stat="identity",position="dodge") +
+  scale_fill_manual(values=c("white",occ_pal[2],occ_pal[3])) +
+  theme_occ() +
+  ylab("Share (%)") +
+  xlab("Region") +
+  theme_classic() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.text.x=element_text(colour=c("white"),lineheight = 0.3),
+        axis.text.y=element_text(colour=c("white"),hjust = 1),
+        axis.title.x=element_text(colour="White",face="bold"),
+        axis.title.y=element_text(colour="White",face="bold"),
+        axis.line.x.bottom=element_line(color="white"),
+        axis.line.y.left=element_line(color="white"),
+        text=element_text(family="HindVadodara",size=60,colour="white"),
+        plot.background = element_rect(fill = "#202B51"),
+        panel.background = element_rect(fill = "#202B51"),
+        legend.background = element_rect(fill = "#202B51"),
+        plot.title = element_text(face="bold"),
+        plot.margin = unit(c(1, 1, 1, 1), "cm"),
+        plot.caption = element_text(colour="grey",lineheight = 0.3)) +
+#  geom_text(aes(label=round(value,0)), position=position_dodge(width=0.9), vjust=-0.25, size=14,colour="white")+
+  guides(fill = guide_legend(reverse = FALSE)) +
+  ylim(0,55) +
+  ggtitle(element_text("Figure 11: Regional variation in share of parents with a child age 5 and under accessing services",face="bold"))+
+  labs(caption = "Source: FSS\n*Estimates unreliable due to sample size")
+ggsave(here('output','access_region.png'),width=15,height=7)
+
+#####
+
+## Access by ethnicity ####
+ggplot(df_access_eth %>% filter(name!="Parental conflict support") %>% 
+         mutate(ethnicity_clean=ifelse(ethnicity_clean=="Mixed","Mixed*",ethnicity_clean)),aes(x=ethnicity_clean,y=value,fill=name)) +
+  geom_bar(stat="identity",position="dodge") +
+  scale_fill_manual(values=c("white",occ_pal[2],occ_pal[3],occ_pal[4],occ_pal[5])) +
+  theme_occ() +
+  ylab("Share (%)") +
+  xlab("Ethnicity") +
+  theme_classic() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.text.x=element_text(colour=c("white"),lineheight = 0.3),
+        axis.text.y=element_text(colour=c("white"),hjust = 1),
+        axis.title.x=element_text(colour="White",face="bold"),
+        axis.title.y=element_text(colour="White",face="bold"),
+        axis.line.x.bottom=element_line(color="white"),
+        axis.line.y.left=element_line(color="white"),
+        text=element_text(family="HindVadodara",size=60,colour="white"),
+        plot.background = element_rect(fill = "#202B51"),
+        panel.background = element_rect(fill = "#202B51"),
+        legend.background = element_rect(fill = "#202B51"),
+        plot.title = element_text(face="bold"),
+        plot.margin = unit(c(1, 1, 1, 1), "cm"),
+        plot.caption = element_text(colour="grey",lineheight = 0.3)) +
+  geom_text(aes(label=round(value,0)), position=position_dodge(width=0.9), vjust=-0.25, size=14,colour="white")+
+  guides(fill = guide_legend(reverse = FALSE)) +
+  ylim(0,65) +
+#  ggtitle(element_text("Figure 2: Share of parents with a child age 5 and under accessing services by ethnicity",face="bold"))+
+  labs(caption = "*Estimates unreliable due to sample size")
+ggsave(here('output','access_ethnicity.png'),width=13,height=5)
+
+#####
+
+## Access by child age ####
+
+ggplot(df_access_cage,aes(x=child_age,y=value,fill=name)) +
+  geom_bar(stat="identity",position="dodge") +
+  scale_fill_manual(values=c("white",occ_pal[2],occ_pal[3], occ_pal[5])) +
+  theme_occ() +
+  ylab("Share (%)") +
+  xlab("Age of youngest child") +
+  theme_classic() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.text.x=element_text(colour=c("white"),lineheight = 0.3),
+        axis.text.y=element_text(colour=c("white"),hjust = 1),
+        axis.title.x=element_text(colour="White",face="bold"),
+        axis.title.y=element_text(colour="White",face="bold"),
+        axis.line.x.bottom=element_line(color="white"),
+        axis.line.y.left=element_line(color="white"),
+        text=element_text(family="HindVadodara",size=60,colour="white"),
+        plot.background = element_rect(fill = "#202B51"),
+        panel.background = element_rect(fill = "#202B51"),
+        legend.background = element_rect(fill = "#202B51"),
+        plot.title = element_text(face="bold"),
+        plot.margin = unit(c(1, 1, 1, 1), "cm"),
+        plot.caption = element_text(colour="grey",lineheight = 0.3)) +
+  geom_text(aes(label=round(value,0)), position=position_dodge(width=0.9), vjust=-0.25, size=14,colour="white")+
+  guides(fill = guide_legend(reverse = FALSE)) 
+  #ggtitle(element_text("Figure 3: Share of parents with a child age 5 and under accessing services by child age",face="bold")) +
+#  labs(caption = "Source: FSS")
+ggsave(here('output','access_childage.png'),width=13,height=5)
+
+ggplot(df_access_cage_6up %>% filter(name!="Playgroup"),aes(x=child_agegroup,y=value,fill=name)) +
+  geom_bar(stat="identity",position="dodge") +
+  scale_fill_manual(values=c("white",occ_pal[2], occ_pal[5])) +
+  theme_occ() +
+  ylab("Share (%)") +
+  xlab("Age of youngest child") +
+  theme_classic() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.text.x=element_text(colour=c("white"),lineheight = 0.3),
+        axis.text.y=element_text(colour=c("white"),hjust = 1),
+        axis.title.x=element_text(colour="White",face="bold"),
+        axis.title.y=element_text(colour="White",face="bold"),
+        axis.line.x.bottom=element_line(color="white"),
+        axis.line.y.left=element_line(color="white"),
+        text=element_text(family="HindVadodara",size=60,colour="white"),
+        plot.background = element_rect(fill = "#202B51"),
+        panel.background = element_rect(fill = "#202B51"),
+        legend.background = element_rect(fill = "#202B51"),
+        plot.title = element_text(face="bold"),
+        plot.margin = unit(c(1, 1, 1, 1), "cm"),
+        plot.caption = element_text(colour="grey",lineheight = 0.3)) +
+  geom_text(aes(label=round(value,0)), position=position_dodge(width=0.9), vjust=-0.25, size=14,colour="white")+
+  guides(fill = guide_legend(reverse = FALSE)) +
+  ylim(0,50) 
+  #ggtitle(element_text("Figure 4: Share of parents with a child age 6 and above accessing services by child age group",face="bold")) +
+#  labs(caption = "Source: FSS")
+ggsave(here('output','access_childage_6up.png'),width=13,height=5)
+
+
+#####
+
+## access by parent gender ####
+
+ggplot(df_access_gender,aes(x=gender,y=value,fill=name)) +
+  geom_bar(stat="identity",position="dodge") +
+  scale_fill_manual(values=c("white",occ_pal[2],occ_pal[3],occ_pal[5])) +
+  theme_occ() +
+  ylab("Share (%)") +
+  xlab("Parent gender") +
+  theme_classic() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.text.x=element_text(colour=c("white"),lineheight = 0.3),
+        axis.text.y=element_text(colour=c("white"),hjust = 1),
+        axis.title.x=element_text(colour="White",face="bold"),
+        axis.title.y=element_text(colour="White",face="bold"),
+        axis.line.x.bottom=element_line(color="white"),
+        axis.line.y.left=element_line(color="white"),
+        text=element_text(family="HindVadodara",size=60,colour="white"),
+        plot.background = element_rect(fill = "#202B51"),
+        panel.background = element_rect(fill = "#202B51"),
+        legend.background = element_rect(fill = "#202B51"),
+        plot.title = element_text(face="bold"),
+        plot.margin = unit(c(1, 1, 1, 1), "cm"),
+        plot.caption = element_text(colour="grey",lineheight = 0.3)) +
+  geom_text(aes(label=round(value,0)), position=position_dodge(width=0.9), vjust=-0.25, size=14,colour="white")+
+  guides(fill = guide_legend(reverse = FALSE)) 
+#  ggtitle(element_text("Figure 5. Gender variation in share of parents with a child age 5 and under accessing services",face="bold")) +
+#  labs(caption = "Source: FSS")
+ggsave(here('output','access_gender.png'),width=15,height=7)
+
+#####
+
+## access by parent employment ####
+
+ggplot(df_access_employment %>% filter(name!="No services accessed"),aes(x=employment,y=value,fill=name)) +
+  geom_bar(stat="identity",position="dodge") +
+  scale_fill_manual(values=c("white",occ_pal[2],occ_pal[3],occ_pal[4],occ_pal[5])) +
+  theme_occ() +
+  ylab("Share (%)") +
+  xlab("Parent employment status") +
+  theme_classic() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.text.x=element_text(colour=c("white"),lineheight = 0.3),
+        axis.text.y=element_text(colour=c("white"),hjust = 1),
+        axis.title.x=element_text(colour="White",face="bold"),
+        axis.title.y=element_text(colour="White",face="bold"),
+        axis.line.x.bottom=element_line(color="white"),
+        axis.line.y.left=element_line(color="white"),
+        text=element_text(family="HindVadodara",size=60,colour="white"),
+        plot.background = element_rect(fill = "#202B51"),
+        panel.background = element_rect(fill = "#202B51"),
+        legend.background = element_rect(fill = "#202B51"),
+        plot.title = element_text(face="bold"),
+        plot.margin = unit(c(1, 1, 1, 1), "cm"),
+        plot.caption = element_text(colour="grey",lineheight = 0.3)) +
+  geom_text(aes(label=round(value,0)), position=position_dodge(width=0.9), vjust=-0.25, size=14,colour="white")+
+  guides(fill = guide_legend(reverse = FALSE)) +
+  ylim(0,60)
+#  ggtitle(element_text(
+#    "Figure 5. Variation in share of parents with a child age 5 and under accessing services by\n parent employment status",face="bold"))+
+#  labs(caption = "Source: FSS") 
+ggsave(here('output','access_employment.png'),width=11,height=5)
+
+#####
+
+
+##### How did parents hear about the services? #####
+
+## Hear - Overall ####
+ggplot(df_hear,aes(x=value,y=perc,label=paste0(round(perc*100,0),"%"))) +
+  geom_bar(stat="identity",fill=occ_pal[2]) +
+  coord_flip() +
+  geom_text(hjust=-0.1,size=12,colour="#202B51") +
+  facet_wrap(~name,nrow=1) +
+  theme_occ() +
+  xlab("") +
+  ylab("Share (%)") +
+  ylim(0,0.4) +
+  theme(axis.text.x=element_blank(),
+        strip.text.x = element_text(colour = '#202B51', lineheight=0.3),
+       # axis.text.x=element_text(colour=c(lineheight = 0.3)),
+        axis.text.y=element_text(colour=c("#202B51"),hjust = 1),
+        # axis.title.x=element_text(colour="#202B51",face="bold"),
+        # axis.title.y=element_text(colour="#202B51",face="bold"),
+        text=element_text(family="HindVadodara",size=60,colour="#202B51")) #+
+ # ggtitle ("Figure 7. Among parents who access a specific service,\n where did they hear about it?")
+ggsave(here('output','hear.png'),width=7,height=3)
+
+## Hear - gender ####
+
+ggplot(df_hear_gender, aes(x=gender, y=perc,fill=value,label=label)) +
+  geom_bar(position='stack', stat='identity') +
+  coord_flip() +
+  geom_text(data  = df_hear_gender, aes(x=gender, y=perc,label=label),
+            position = position_stack(vjust=0.5),colour="white", size=9) +
+  scale_fill_manual(values=c(occ_pal[1],occ_pal[4],"dark grey",occ_pal[3],occ_pal[2],occ_pal[5],occ_pal[6])) +
+  theme_occ() +
+  labs(y = "Share of parents (%)", x = "Parent gender") +
+  facet_wrap(~name) +
+  theme(legend.position = "bottom",
+        legend.title=element_blank(),
+        strip.text.x = element_text(colour = '#202B51'))+
+  theme(text = element_text(size = 35))
+ggsave(here('output','hear_gender.png'),width=7,height=3)
+
+##### Who delivered the services? ####
+
+# Overall 
+
+ggplot(df_delivered,aes(x=value,y=perc,label=paste0(round(perc*100,0),"%"))) +
+  geom_bar(stat="identity",fill=occ_pal[2]) +
+  coord_flip() +
+  geom_text(hjust=-0.1,size=12,colour="#202B51") +
+  facet_wrap(~name,nrow=1) +
+  theme_occ() +
+  xlab("") +
+  ylab("Share (%)") +
+  ylim(0,0.7) +
+  theme(axis.text.x=element_blank(),
+        strip.text.x = element_text(colour = '#202B51', lineheight=0.3),
+        # axis.text.x=element_text(colour=c(lineheight = 0.3)),
+        axis.text.y=element_text(colour=c("#202B51"),hjust = 1),
+        # axis.title.x=element_text(colour="#202B51",face="bold"),
+        # axis.title.y=element_text(colour="#202B51",face="bold"),
+        text=element_text(family="HindVadodara",size=60,colour="#202B51")) 
+ggsave(here('output','delivered.png'),width=7,height=3)
+
+# Gender
+ggplot(df_delivered_gender, aes(x=gender, y=perc,fill=value,label=label)) +
+  geom_bar(position='stack', stat='identity') +
+  coord_flip() +
+  geom_text(data  = df_delivered_gender, aes(x=gender, y=perc,label=label),
+            position = position_stack(vjust=0.5),colour="white", size=10) +
+  scale_fill_manual(values=c(occ_pal[1],occ_pal[4],"dark grey",occ_pal[3],occ_pal[2],occ_pal[5],occ_pal[6])) +
+  theme_occ() +
+  labs(y = "Share of parents (%)", x = "Parent gender") +
+  facet_wrap(~name) +
+  theme(legend.position = "bottom",
+        legend.title=element_blank(),
+        strip.text.x = element_text(colour = '#202B51'))+
+  theme(text = element_text(size = 35))
+ggsave(here('output','delivered_gender.png'),width=7,height=3)
+
+##### Barriers to accessing services #####
+
+# Overall barriers
+
+ggplot(df_barrier,aes(x=value,y=perc,label=paste0(round(perc*100,0),"%"))) +
+  geom_bar(stat="identity",fill=occ_pal[2]) +
+  coord_flip() +
+  geom_text(hjust=-0.1,size=12,colour="#202B51") +
+  facet_wrap(~name,nrow=1) +
+  theme_occ() +
+  xlab("") +
+  ylab("Share (%)") +
+  ylim(0,0.6) +
+  theme(axis.text.x=element_blank(),
+        strip.text.x = element_text(colour = '#202B51', lineheight=0.3),
+        axis.text.y=element_text(colour=c("#202B51"),hjust = 1),
+        text=element_text(family="HindVadodara",size=60,colour="#202B51")) 
+ggsave(here('output','barriers.png'),width=7,height=3)
+
+# Overall barriers childage under age 1
+
+ggplot(df_barrier_u1,aes(x=value,y=perc,label=paste0(round(perc*100,0),"%"))) +
+  geom_bar(stat="identity",fill=occ_pal[2]) +
+  coord_flip() +
+  geom_text(hjust=-0.1,size=12,colour="#202B51") +
+  facet_wrap(~name,nrow=1) +
+  theme_occ() +
+  xlab("") +
+  ylab("Share (%)") +
+  ylim(0,0.8) +
+  theme(axis.text.x=element_blank(),
+        strip.text.x = element_text(colour = '#202B51', lineheight=0.3),
+        axis.text.y=element_text(colour=c("#202B51"),hjust = 1),
+        text=element_text(family="HindVadodara",size=60,colour="#202B51")) +
+  ggtitle ("Among parents with childern under one who didn't access a service,\n what barriers prevented them from doing so?")
+ggsave(here('output','barriers_u1.png'),width=7,height=3)
+
+# Barriers by region
+
+ggplot(df_barrier_reg, aes(x=region, y=perc,fill=value,label=label)) +
+  geom_bar(position='stack', stat='identity') +
+  coord_flip() +
+  geom_text(data  = df_barrier_reg, aes(x=region, y=perc,label=label),
+            position = position_stack(vjust=0.5),colour="white", size=10) +
+  scale_fill_manual(values=c(occ_pal[1],occ_pal[4],"dark grey",occ_pal[3],occ_pal[2],occ_pal[5],occ_pal[6])) +
+  theme_occ() +
+  labs(y = "Share of parents (%)", x = "Region") +
+  facet_wrap(~name) +
+  theme(legend.position = "bottom",
+        legend.title=element_blank(),
+        strip.text.x = element_text(colour = '#202B51'))+
+  theme(text = element_text(size = 35))
+ggsave(here('output','barrier_region.png'),width=15,height=10)
+
+
+# Barriers by ethnicity
+
+#filter out "other" due to low sample size
+df_barrier_eth <- df_barrier_eth %>%  filter(!ethnicity_clean %in% c("Other"))
+
+ggplot(df_barrier_eth, aes(x=ethnicity_clean, y=perc,fill=value,label=label)) +
+  geom_bar(position='stack', stat='identity') +
+  coord_flip() +
+  geom_text(data  = df_barrier_eth, aes(x=ethnicity_clean, y=perc,label=label),
+            position = position_stack(vjust=0.5),colour="white", size=10) +
+  scale_fill_manual(values=c(occ_pal[1],occ_pal[4],"dark grey",occ_pal[3],occ_pal[2],occ_pal[5],occ_pal[6])) +
+  theme_occ() +
+  labs(y = "Share of parents (%)", x = "Ethnicity") +
+  facet_wrap(~name) +
+  theme(legend.position = "bottom",
+        legend.title=element_blank(),
+        strip.text.x = element_text(colour = '#202B51'))+
+  theme(text = element_text(size = 35))
+ggsave(here('output','barrier_ethnicity.png'),width=7,height=3)
+
+
+# Barriers by child age
+
+ggplot(df_barrier_childage %>% filter(name %in% c("Support group","Parenting course")), aes(x=factor(child_agegroup,levels = c("0 to 5", "6 to 9","10 to 14","15 to 17")), y=perc,fill=value,label=label)) +
+  geom_bar(position='stack', stat='identity') +
+  coord_flip() +
+  geom_text(data  = df_barrier_childage  %>% filter(name %in% c("Support group","Parenting course")), aes(x=child_agegroup, y=perc,label=label),
+            position = position_stack(vjust=0.5),colour="white", size=10) +
+  scale_fill_manual(values=c(occ_pal[1],occ_pal[4],"dark grey",occ_pal[3],occ_pal[2],occ_pal[5],occ_pal[6])) +
+  theme_occ() +
+  labs(y = "Share of parents (%)", x = "Child age group") +
+  facet_wrap(~name) +
+  theme(legend.position = "bottom",
+        legend.title=element_blank())+
+  theme(text = element_text(size = 35))
+ggsave(here('output','barrier_childage.png'),width=7,height=3)
+
+# Barriers by parent gender
+
+ggplot(df_barrier_gender, aes(x=gender, y=perc,fill=value,label=label)) +
+  geom_bar(position='stack', stat='identity') +
+  coord_flip() +
+  geom_text(data  = df_barrier_gender, aes(x=gender, y=perc,label=label),
+            position = position_stack(vjust=0.5),colour="white", size=10) +
+  scale_fill_manual(values=c(occ_pal[1],occ_pal[4],"dark grey",occ_pal[3],occ_pal[2],occ_pal[5],occ_pal[6])) +
+  theme_occ() +
+  labs(y = "Share of parents (%)", x = "Parent gender") +
+  facet_wrap(~name) +
+  theme(legend.position = "bottom",
+        legend.title=element_blank())+
+  theme(text = element_text(size = 35))
+ggsave(here('output','barrier_gender.png'),width=7,height=3)
+
+
+# Barriers by parent employment
+
+# filter to full time, part time and homemaker due to small sample size in other groups
+df_barrier_employment <- df_barrier_employment %>% 
+  filter(employment %in% c("Full-time employed","Part-time employed","Homemaker"))
+
+ggplot(df_barrier_employment, aes(x=employment, y=perc,fill=value,label=label)) +
+  geom_bar(position='stack', stat='identity') +
+  coord_flip() +
+  geom_text(data  = df_barrier_employment, aes(x=employment, y=perc,label=label),
+            position = position_stack(vjust=0.5),colour="white", size=10) +
+  scale_fill_manual(values=c(occ_pal[1],occ_pal[4],"dark grey",occ_pal[3],occ_pal[2],occ_pal[5],occ_pal[6])) +
+  theme_occ() +
+  labs(y = "Share of parents (%)", x = "Parent employment") +
+  facet_wrap(~name) +
+  theme(legend.position = "bottom",
+        legend.title=element_blank())+
+  theme(text = element_text(size = 35))
+ggsave(here('output','barrier_employment.png'),width=9,height=5)
+
+##### Testing whether certain differences are statistically sig. #####
+library(weights)
+# Not sig: 25% of mixed-race parents worried about not fitting in compared to 13% of Asian parents and 20% percent of White and Black parents 
+dfmixed <- df %>% filter(ethnicity_clean=="Mixed") %>% filter(barrier_playgroup!="") %>% mutate(barrier_playgroup_notfittingin=ifelse(barrier_playgroup=="I don't think I would fit in at this service",1,0))
+dfasian <- df %>% filter(ethnicity_clean=="Asian") %>% filter(barrier_playgroup!="") %>% mutate(barrier_playgroup_notfittingin=ifelse(barrier_playgroup=="I don't think I would fit in at this service",1,0))
+dfwhite <- df %>% filter(ethnicity_clean=="White") %>% filter(barrier_playgroup!="") %>% mutate(barrier_playgroup_notfittingin=ifelse(barrier_playgroup=="I don't think I would fit in at this service",1,0))
+wtd.t.test(dfmixed$barrier_playgroup_notfittingin,dfasian$barrier_playgroup_notfittingin, weight=dfmixed$wt, weighty=dfasian$wt,alternative = "two.sided")
+wtd.t.test(dfmixed$barrier_playgroup_notfittingin,dfwhite$barrier_playgroup_notfittingin, weight=dfmixed$wt, weighty=dfwhite$wt,alternative = "two.sided")
+
+# Sig: 21% of parents in London selected ‘not fitting in’ as their main barrier against accessing playgroups. In contrast, only 5% of parents in Yorkshire and the Humber said they didn’t think they would fit in
+dfyorkshire <- df %>% filter(region=="Yorkshire and the Humber") %>% filter(barrier_playgroup!="") %>% mutate(barrier_playgroup_notfittingin=ifelse(barrier_playgroup=="I don't think I would fit in at this service",1,0))
+dflondon <- df %>% filter(region=="London") %>% filter(barrier_playgroup!="") %>% mutate(barrier_playgroup_notfittingin=ifelse(barrier_playgroup=="I don't think I would fit in at this service",1,0))
+wtd.t.test(dfyorkshire$barrier_playgroup_notfittingin,dflondon$barrier_playgroup_notfittingin, weight=dfyorkshire$wt,weighty=dflondon$wt,alternative = "two.sided")
+
+# Sig: Parents in yorkshire more likely to say they didn't need the service
+dfyorkshire <- df %>% filter(region=="Yorkshire and the Humber") %>% filter(barrier_playgroup!="") %>% mutate(barrier_playgroup_notneeded=ifelse(barrier_playgroup=="My family hasn't needed it",1,0))
+dflondon <- df %>% filter(region=="London") %>% filter(barrier_playgroup!="") %>% mutate(barrier_playgroup_notneeded=ifelse(barrier_playgroup=="My family hasn't needed it",1,0))
+wtd.t.test(dfyorkshire$barrier_playgroup_notneeded,dflondon$barrier_playgroup_notneeded, weight=dfyorkshire$wt,weighty=dflondon$wt,alternative = "two.sided")
+
+# Sig: women more likely to use parenting courses than men
+dffemale <- df %>% filter(gender=="Female") %>% filter(child_age %in% c("Under 1 year  ","1","2","3","4","5")) %>% mutate(access_playgroup=ifelse(access_playgroup!="",1,0))
+dfmale <- df %>% filter(gender=="Male") %>% filter(child_age %in% c("Under 1 year  ","1","2","3","4","5")) %>% mutate(access_playgroup=ifelse(access_playgroup!="",1,0))
+wtd.t.test(dffemale$access_playgroup,dfmale$access_playgroup,weight=dffemale$wt,weighty=dfmale$wt,alternative = "two.sided")
+
+# Not sig: men more likely to not fit in at playgroups than women
+dffemale <- df %>% filter(gender=="Female") %>% filter(barrier_playgroup!="") %>% mutate(barrier_playgroup_notfittingin=ifelse(barrier_playgroup=="I didn't know this service existed",1,0))
+dfmale <- df %>% filter(gender=="Male") %>% filter(barrier_playgroup!="") %>% mutate(barrier_playgroup_notfittingin=ifelse(barrier_playgroup=="I didn't know this service existed",1,0))
+wtd.t.test(dffemale$barrier_playgroup_notfittingin,dfmale$barrier_playgroup_notfittingin,weight=dffemale$wt,weighty=dfmale$wt,alternative = "two.sided")
+
+# Sig: men more likely to cite scheduling classes for parenting courses
+dffemale <- df %>% filter(gender=="Female") %>% filter(barrier_parenting!="") %>% mutate(barrier_parentingschedule=ifelse(barrier_parenting=="Timing of service clashes with working hours or other family commitments",1,0))
+dfmale <- df %>% filter(gender=="Male") %>% filter(barrier_parenting!="") %>% mutate(barrier_parentingschedule=ifelse(barrier_parenting=="Timing of service clashes with working hours or other family commitments",1,0))
+wtd.t.test(dffemale$barrier_parentingschedule,dfmale$barrier_parentingschedule,weight=dffemale$wt,weighty=dfmale$wt,alternative = "two.sided")

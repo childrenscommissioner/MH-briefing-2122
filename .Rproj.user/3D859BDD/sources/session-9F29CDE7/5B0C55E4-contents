@@ -1,0 +1,330 @@
+---
+params:
+  section: "abc"
+  pg: "abc"
+  var: "abc"
+title: "Local area (CCG) maps"
+output: 
+ html_document: 
+   self_contained: no
+   mathjax: null
+   highlight: null
+   fig_width: 10
+   theme: null
+   template: "../CCO_template_html.html"
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = F,warning=F,message=F)
+
+setwd("W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis/ccg maps")
+
+```
+
+<link rel="stylesheet" href="W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis//styles.css" type="text/css" />
+
+<a href="../../index.html">Home</a></li>
+
+```{r set up, echo=FALSE}
+
+### import packages
+
+require(rgdal)
+require(rgeos)
+require(rmapshaper)
+require(leaflet)
+require(dplyr)
+require(here)
+
+```
+
+<br/>
+  
+
+These maps present 2021-22 Clinical Commissioning Group (CCG) performance on five key indicators used to assess children's mental health services (CAMHS) provision. These indicators are:
+<br/>
+
+* CCG spend on children's mental health as a percentage of CCG budget. This ranges from 0.4% in NHS Blackpool to 2.2% in NHS Salford.
+
+* Mental health spend per child (calculated using NHS Five Year Forward View (FYFV) spending figures and ONS mid-2020 CCG population estimates. This ranges from £34 in NHS Doncaster to £141 in NHS Norfolk and Waveney.
+
+* Total number of children referred to CAMHS as a proportion of the under-18 population. This ranges from 1.1% in NHS North West London to 11.5% in NHS South Tyneside. 
+
+* Average waiting time between assessment and treatment for children who receive a second contact (a proxy for entering treatment). This ranges from 13 days in NHS West Leicestershire to 80 days in NHS Sunderland.
+
+* The percentage of children whose referrals were closed before treatment. This ranges from 5% in NHS East Sussex to 50% in NHS North Cumbria.
+<br/><br/>
+
+Also shown is an _overall score_ for each CCG calculated based on their performance on the indicators above. This provides an overall indication of how each CCG compares to the rest of England. For each indicator, CCGs are ranked from best to worst (e.g. shortest waiting time to longest) and assigned to 5 quintiles. Best performing CCGs are given a score of 5 while the worst performers are given a score of 1. We then add these quintile scores together to form an overall score ranging from 5 to 25 for each CCG.
+
+<br/>
+ 
+**NHS Clinical Commissioning Group Maps**
+
+***
+Hover over an area to display more information, scroll up and down to zoom. Please see above for the ranges within each indicator.
+```{r,echo=F,message=F,warning=F,include=F}
+
+map <- readOGR(dsn = "W:/CCO-WORKING-FS/Projects/MH briefing/MHB2122/ccg maps/CCG shape files")
+map <- rmapshaper :: ms_simplify(map,keep=0.1)
+
+
+#saveRDS save any object in R in many formats
+
+# saveRDS(map,"W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis/ccg maps/ccgmap2021.rds")
+
+# map <- readRDS("C:/Users/rgilhooly/OneDrive - Department for Education/Documents/Projects/Mental Health Briefing/ccgmap2021.rds")
+
+map$CCG20CD <- as.character(map$ccg20cd)
+
+ccg_code <- map@data %>% select(ccg20nm, ccg20cd)
+
+mhdata2122 <- read.csv("W:/CCO-WORKING-FS/Projects/MH briefing/MHB2122/intermediate/summarytables_202122.csv", stringsAsFactors = F) %>% 
+  mutate(ccg = toupper(ccg)) %>% 
+  rename(percbudget_camhs_2122 = pbudget_camhs_2122,
+         percreferrals_closed_2122 = referrals_closed_2122) 
+
+
+
+mhdata2021 <- read.csv("W:/CCO-WORKING-FS/Projects/MH briefing/MHB2122/inputs/MH tables 202021.csv", stringsAsFactors = F) %>% 
+  rename(ccg = Clinical.Commissioning.Group..CCG.,
+         ccg_cd = CCG.code)
+
+# save ccg names from 20-21 MHB data (matches the names in the latest available map) 
+ccgnames_use <- mhdata2021 %>% select(ccg, ccg_cd) %>% mutate(ccg = toupper(ccg))
+
+# Import CCG lookup
+ccg_lookup <- read.csv(here('inputs','ccg_lookup.csv'))
+
+# bind on 2021-22 data to the correct names
+ccgnames_use <- ccgnames_use %>% 
+  left_join(ccg_lookup, by=c("ccg")) %>% 
+  unique()
+
+ccgnames_use <- ccgnames_use %>% 
+  left_join(mhdata2122, by=c("ccg_new"="ccg"))
+
+overall_sc <- ccgnames_use
+
+# london <- read.csv("W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/ccg #maps/london ccg.csv", stringsAsFactors = F)
+
+
+# check that codes are in both datasets
+overall_sc$ccg_cd[!overall_sc$ccg_cd %in% map$ccg20cd]
+
+for(i in c("percbudget_camhs_2122","spc_202122","percreferred_202122","avg_wait_days_2122","percreferrals_closed_2122","overall_score_2122")){
+  
+  vNm<-rlang::sym(paste0(i,"_fill"))
+  v1<-rlang::sym(i)
+  
+  overall_sc<-overall_sc %>%
+    mutate(!!vNm:=scales::rescale(!!v1,c(0,1)))
+  
+  
+}
+
+# change from British standard to GPS format 
+map <- spTransform(map, "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+
+map <- sp::merge(map,overall_sc, by.x="ccg20cd", by.y="ccg_cd")
+
+outcomes<-data.frame(var=c("percbudget_camhs_2122","spc_202122","percreferred_202122","avg_wait_days_2122","percreferrals_closed_2122","overall_score_2122"),
+                     lb=c("% of CCG budget spent on CAMHS","Spend per child (£) on CAMHS","% of children referred to CAMHS",
+                          "Average waiting time (days)","% of CAMHS referrals closed before treatment","CCG overall score"),stringsAsFactors = F)
+
+require(ggplot2)
+require(RColorBrewer)
+
+pal <- colorNumeric("viridis", domain = c(0,1))
+
+labels <- lapply(list("percbudget_camhs_2122","spc_202122","percreferred_202122","avg_wait_days_2122","percreferrals_closed_2122","overall_score_2122"), 
+                 function(x){
+                   
+                   if(grepl("perc",x)){
+                     paste0("<strong>", map$ccg20nm, "</strong><br/>", outcomes$lb[outcomes$var==x],": ",
+                            round(map@data[,x],4))
+                     
+                   }else{
+                     paste0("<strong>", map$ccg20nm, "</strong><br/>", outcomes$lb[outcomes$var==x],": ",
+                            map@data[,x])
+                     
+                   }
+                   
+                            
+                   })
+
+for(i in seq_len(length(labels))){
+  
+  labels[[i]]<-lapply(labels[[i]],htmltools::HTML)
+  
+}
+
+names(labels)<-c("percbudget_camhs_2122","spc_202122","percreferred_202122","avg_wait_days_2122","percreferrals_closed_2122","overall_score_2122")
+    
+
+```
+
+```{r, out.width="100%",echo=F,message=F,warning=F}
+ 
+                                                                                      
+leaflet(data=map, options = leafletOptions(backgroun="#FFF")) %>%
+  addProviderTiles(providers$CartoDB) %>%
+  addPolygons(color="#444444", weight=1, smoothFactor = 0.5,
+              opacity=1.0, fillOpacity = 0.7, fillColor = ~pal(overall_score_2122_fill),
+              popupOptions = highlightOptions(bringToFront = T, weight=4),
+              label =labels[["overall_score_2122"]],group="CCG overall score") %>%
+  
+  addPolygons(color="#444444", weight=1, smoothFactor = 0.5,
+              opacity=1.0, fillOpacity = 0.7, fillColor = ~pal(percreferrals_closed_2122_fill),
+              popupOptions = highlightOptions(bringToFront = T, weight=4),
+              label =labels[["percreferrals_closed_2122"]],group="% Referrals closed") %>%
+  
+  addPolygons(color="#444444", weight=1, smoothFactor = 0.5,
+              opacity=1.0, fillOpacity = 0.7, fillColor = ~pal(avg_wait_days_2122_fill),
+              popupOptions = highlightOptions(bringToFront = T, weight=4),
+              label =labels[["avg_wait_days_2122"]],group="Average wait (days)") %>%
+  
+  addPolygons(color="#444444", weight=1, smoothFactor = 0.5,
+              opacity=1.0, fillOpacity = 0.7, fillColor = ~pal(percreferred_202122_fill),
+              popupOptions = highlightOptions(bringToFront = T, weight=4),
+              label =labels[["percreferred_202122"]],group="% Referred to CAMHS") %>%
+  
+  addPolygons(color="#444444", weight=1, smoothFactor = 0.5,
+              opacity=1.0, fillOpacity = 0.7, fillColor = ~pal(spc_202122_fill),
+              popupOptions = highlightOptions(bringToFront = T, weight=4),
+              label =labels[["spc_202122"]],group="CAMHS spend per child") %>%
+  
+  addPolygons(color="#444444", weight=1, smoothFactor = 0.5,
+              opacity=1.0, fillOpacity = 0.7, fillColor = ~pal(percbudget_camhs_2122_fill),
+              popupOptions = highlightOptions(bringToFront = T, weight=4),
+              label =labels[["percbudget_camhs_2122"]],group="% CCG budget spent on CAMHS") %>%
+  
+  addLayersControl(
+    baseGroups = c("CCG overall score","% Referrals closed","Average wait (days)","% Referred to CAMHS","CAMHS spend per child","% CCG budget spent on CAMHS"),
+    options = layersControlOptions(collapsed = FALSE)) %>%
+  addLegend("topleft", pal = pal, values = seq(0,1),bins=5,
+            labFormat = function(type, cuts, p) { 
+              n = length(cuts) 
+              cuts[n] = "Highest rate" 
+              for (i in 2:(n-1)){cuts[i] = " "} 
+              cuts[1] = "Lowest rate" 
+              paste0(cuts[-n], cuts[-1])},
+            title = "Legend",
+            na.label = "Missing/excluded",
+            opacity = 0.7
+  ) 
+
+```
+
+```{r, results='asis',echo=F,warning=F}
+
+minVals<-sapply(c("overall_score_2122","percreferrals_closed_2122","avg_wait_days_2122","percreferred_202122","spc_202122","percbudget_camhs_2122"),function(x){
+     
+  if(grepl("perc",x)){
+  
+     paste0(round(min(overall_sc[,x],na.rm=T),4),"%")
+    }else if(x=="avg_wait_days_2122"){
+       
+      paste0(min(overall_sc[,x],na.rm=T)," days")
+       
+    }else if(x=="spc_202122"){
+       paste0("£",round(min(overall_sc[,x],na.rm=T))," / child")
+    }else{
+       
+      paste0(min(overall_sc[,x],na.rm=T))
+     }
+     
+   }) 
+
+maxVals<-sapply(c("overall_score_2122","percreferrals_closed_2122","avg_wait_days_2122","percreferred_202122","spc_202122","percbudget_camhs_2122"),function(x){
+     
+  if(grepl("perc",x)){
+  
+     paste0(round(max(overall_sc[,x],na.rm=T),4),"%")
+    }else if(x=="avg_wait_days_2122"){
+       
+      paste0(max(overall_sc[,x],na.rm=T)," days")
+       
+    }else if(x=="spc_202122"){
+       paste0("£",round(max(overall_sc[,x],na.rm=T))," / child")
+    }else{
+       
+      paste0(max(overall_sc[,x],na.rm=T))
+     }
+   }) 
+
+
+minVals<-jsonlite::toJSON(minVals,"values")
+
+maxVals<-jsonlite::toJSON(maxVals,"values")
+
+titles<-jsonlite::toJSON(outcomes$lb,"values")
+
+cat(paste0('<script>
+  
+  window.addEventListener("load", function () {
+    var eles = document.getElementsByClassName("leaflet-control-layers-base");
+    
+    eles[0].insertAdjacentHTML("afterbegin","<span style=',"'","margin-bottom:3px;font-weight:bold","'",'>Select measure to view:</span>")
+
+  var maxArr = ',maxVals,';
+
+  var minArr = ',minVals,';
+
+  var legendEntries = document.getElementsByClassName("leaflet-control-layers-selector")
+
+  for (var i=0; i < legendEntries.length; i++){
+
+  legendEntries[i].setAttribute("minval_map",minArr[i])
+
+  legendEntries[i].setAttribute("maxval_map",maxArr[i])
+
+  }
+
+var legend_1 = document.getElementsByClassName("info legend leaflet-control")[0]
+
+  var legEntries_1 = legend_1.getElementsByTagName("text")
+
+  legEntries_1[0].innerHTML = minArr[0]
+
+  
+  legEntries_1[legEntries_1.length - 1].innerHTML = maxArr[0]
+
+
+f3 = function(){
+
+  var minVal_var = this.getAttribute("minval_map")
+
+  var maxVal_var = this.getAttribute("maxval_map")
+
+  var legend = document.getElementsByClassName("info legend leaflet-control")[0]
+
+  var legEntries = legend.getElementsByTagName("text")
+
+  legEntries[0].innerHTML = minVal_var
+
+  
+
+  legEntries[legEntries.length - 1].innerHTML = maxVal_var
+
+  
+
+  }
+
+  for (var i=0; i < legendEntries.length; i++){
+
+  legendEntries[i].addEventListener("click",f3)
+
+  }
+    
+})
+
+  
+  
+
+  </script>'
+  ))
+```
+
+<br/> <br/>

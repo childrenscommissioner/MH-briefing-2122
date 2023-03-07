@@ -1,0 +1,591 @@
+
+### Author: Rebecca Gilhooly
+### Title: Cleaning and analysis script for the MH Briefing (2021/22 data)
+### Date: 18/01/2023
+
+library(here)
+library(dplyr)
+library(ggplot2)
+library(occresearch)
+library(tidyr)
+library(janitor)
+library(haven)
+library(stringr)
+library(showtext)
+library(kableExtra)
+
+
+#####    Set up    #####
+
+# Import fonts
+
+font_add("HindVadodara", here('inputs','HindVadodara-Regular.ttf'), bold = here('inputs','HindVadodara-Bold.ttf'))
+showtext_auto()
+windows()
+
+# Function to copy data frames
+
+writetable <- function(x){
+  
+  x %>% write.table(file="clipboard", sep="\t", row.names=F)}
+
+
+# Function to format dataframes 
+format <- function(x){ 
+  x %>% 
+    mutate(ccg = toupper(ccg)) %>% 
+    mutate(across(starts_with('t4'), ~ifelse(. %in% c("","*"),NA, .))) %>% 
+    mutate(across(starts_with('t4'), ~as.numeric(.))) %>% 
+    mutate(across(starts_with('adultward'), ~ifelse(. %in% c("","*"), NA, .))) %>% 
+    mutate(across(starts_with('adultward'), ~as.numeric(.))) %>% 
+    mutate(across(starts_with('contacts'), ~as.numeric(.))) 
+}
+
+### Import CCG lookup ###
+
+ccg_lookup <- read.csv(here('inputs','ccg_lookup.csv'))
+
+
+### Import data  ###
+
+
+### NHS England (NHSE)
+
+# NHSE send their data on separate tabs in an Excel spreadsheet.
+# Data needs compiling into one dataframe for R - aka the "cleandata.csv" file below
+
+df_nhse <- read.csv(here('inputs','nhsengland_cleandata.csv'))
+
+# Trend data across all indicators is labelled by year/quarter - column names need to be renamed after import.
+# Copy (old) column names into excel using writetable function to create a look up file with new names (nhse_names.csv)
+
+#writetable(names(df_nhse)) 
+
+# Import names file and replace column names
+nhse_names <- read.csv(here('inputs','nhse_names.csv'))
+names(df_nhse) <- nhse_names$New
+
+# Fix formatting issues
+df_nhse <- format(df_nhse)
+str(df_nhse)
+
+
+### NHS Digital (NHSD) ###
+
+# NHSD data is presented in an unhelpful format - needs copying into a clean spreadsheet with only values.
+df_nhsd_full <- read.csv(here('inputs', 'nhsdigital_cleandata.csv'))
+nhsd_names <- read.csv(here('inputs','nhsd_names.csv'))
+names(df_nhsd_full) <- nhsd_names$New
+
+# Fix formatting issues
+df_nhsd_full <- format(df_nhsd_full)
+str(df_nhsd_full)
+
+# Clean table (without the UNKNOWN row)
+df_nhsd_2122 <- df_nhsd_full %>% filter(!ccg %in% c("UNKNOWN"))
+
+### NHSD 2020/21
+df_nhsd_2021 <- read.csv(here('inputs','MH tables 202021.csv')) %>% 
+  select(-Region, -CCG.code, -org_cd, -'X..percentage.of.children.referred.to.CYPMHS')
+
+# rename columns
+df_nhsd_2021 <- df_nhsd_2021 %>% 
+  rename(ccg = 'Clinical.Commissioning.Group..CCG.',
+         avg_wait_days_2021 = 'Average.waiting.time.before.treatment..days.',
+         referrals_closed_2021 = 'X..of.referrals.closed.before.treatment',
+         overall_score_2021 = 'CCG.overall.score')
+
+# create separate table for number of children referred - summarise by ccg name 
+no_referred_2021 <- df_nhsd_2021 %>% select(ccg, no_referred_2021) %>% 
+  left_join(ccg_lookup %>% select(-region), by = c("ccg"="ccg")) %>% 
+  mutate(no_referred_2021 = str_remove(no_referred_2021,",")) %>% 
+  mutate(no_referred_2021 = as.numeric(no_referred_2021)) %>% 
+  group_by(ccg_new) %>% 
+  mutate(no_referred_2021 = sum(no_referred_2021, na.rm = TRUE)) %>% 
+  select(-ccg) %>% unique()
+
+# select columns to calculate mean
+cols_2021 <- names(df_nhsd_2021)[2:4]
+
+# join ccg lookup and summarise table by new ccg names
+df_nhsd_2021 <- df_nhsd_2021 %>% 
+  # remove no_referred so that the below mean function can work for CCGs that merged. 
+  select(-no_referred_2021) %>% 
+  left_join(ccg_lookup, by= c("ccg"="ccg")) %>% 
+  group_by(ccg_new) %>% 
+  mutate(across(cols_2021,  ~ mean(.x, na.rm = TRUE))) %>% 
+  select(-ccg) %>% unique()
+
+# bind on 2020/2021 figures
+df_nhsd_2021 <- df_nhsd_2021 %>% 
+  left_join(no_referred_2021, by = c("ccg_new")) 
+
+
+# NHSD 2019/20
+df_nhsd_1920 <- read.csv(here('inputs','MH tables 201920.csv')) %>%  
+  select(-region, -ccg_cd, -perc_access, -X..still.waiting)
+
+df_nhsd_1920 <- df_nhsd_1920 %>% 
+  rename(perc_referred_1920 = perc_referral,
+         avg_wait_days_1920 = avg_wait,
+         referrals_closed_1920 = perc_closed,
+         overall_score_1920 = overall_score)
+
+# separate df for number of referrals
+no_referred_1920 <- df_nhsd_1920 %>% select(ccg, no_referred_1920) %>% 
+  left_join(ccg_lookup %>% select(-region), by = c("ccg"="ccg")) %>% 
+  mutate(no_referred_1920 = str_remove(no_referred_1920,",")) %>% 
+  mutate(no_referred_1920 = as.numeric(no_referred_1920)) %>% 
+  group_by(ccg_new) %>% 
+  mutate(no_referred_1920 = sum(no_referred_1920, na.rm = TRUE)) %>% 
+  select(-ccg) %>% unique()
+
+# join lookup for new ccg name
+cols_1920 <- names(df_nhsd_1920)[2:5]
+
+df_nhsd_1920 <- df_nhsd_1920 %>%
+  select(-no_referred_1920) %>% 
+  left_join(ccg_lookup, by= c("ccg"="ccg")) %>% 
+  group_by(ccg_new) %>% 
+  mutate(across(cols_1920,  ~ mean(.x, na.rm = TRUE))) %>% 
+  select(-ccg) %>% unique()
+
+# bind on no_referrals table
+df_nhsd_1920 <- df_nhsd_1920 %>% 
+  left_join(no_referred_1920, by=c("ccg_new"))
+
+### join nhsd tables together 
+df_nhsd <- df_nhsd_2122 %>% 
+  left_join(df_nhsd_2021, by=c("ccg"="ccg_new")) %>% 
+  left_join(df_nhsd_1920 %>% select(!region), by=c("ccg"="ccg_new")) 
+
+# Combine nhse and nhsd tables
+df <- df_nhse %>%  
+  select(-region,-org_cd) %>% 
+  left_join(df_nhsd, by=c("ccg"="ccg"))
+
+# bind on 2018 ccg population estimates
+pop_2018 <- read.csv(here('intermediate','pop_2018.csv'))
+
+df <- df %>% 
+  left_join(pop_2018, by=c("ccg"))
+
+# check structure
+str(df)
+
+
+#####  Analysis #####
+
+# create spc_year, perc_budget, perc_referred (divide by pop), perc_closed, total CCG allocation (mhspend_allages/mhspend_perc)
+# note that the latest population estimates for CCGs was published in 2022
+
+### Spend per child
+df <- df %>%
+  mutate(spc_202122 = mhspend_cyp_2122/pop_2020,
+         spc_202021 = mhspend_cyp_2021/pop_2020,
+         spc_201920 = mhspend_cyp_1920/pop_2019)
+
+
+### Percentage of YP population referred 
+df <- df %>%
+  mutate(percreferred_202122 = no_referred/pop_2020,
+         percreferred_202021 = no_referred_2021/pop_2020,
+         percreferred_201920 = no_referred_1920/pop_2019)
+
+### Calculate total budget allocation per ccg (not just MH)
+
+df <- df %>%
+  mutate(total_budget_202122 = mhspend_allages_2122/mhspend_perc_allocation_2122) %>% 
+  mutate(total_budget_202021 = mhspend_allages_2021/mhspend_perc_allocation_2021) %>%
+  mutate(total_budget_201920 = mhspend_allages_1920/mhspend_perc_allocation_1920) %>% 
+  mutate(total_budget_201819 = mhspend_allages_1819/mhspend_perc_allocation_1819) %>% 
+  mutate(total_budget_201718 = mhspend_allages_1718/mhspend_perc_allocation_1718) 
+
+### Calculate proportion of budget allocated to CYPMHS
+
+df <- df %>% 
+  mutate(pbudget_camhs_2122 = mhspend_cyp_2122/total_budget_202122) %>% 
+  mutate(pbudget_camhs_2021 = mhspend_cyp_2021/total_budget_202021) %>% 
+  mutate(pbudget_camhs_1920 = mhspend_cyp_1920/total_budget_201920) %>% 
+  mutate(pbudget_camhs_1819 = mhspend_cyp_1819/total_budget_201819) %>% 
+  mutate(pbudget_camhs_1718 = mhspend_cyp_1718/total_budget_201718) 
+
+###  Create separate England and CCGs only table
+
+england <- df %>% 
+  filter(ccg=="ENGLAND")
+
+ccg_df <- df %>%
+  filter(ccg!="ENGLAND")
+
+### Assign quintile to each CCG for each 
+# spend per child, perc budget, avg wait, perc referred, referrals closed
+
+ccg_df <- ccg_df %>%
+  mutate(spc_2122_quintile = ntile(spc_202122, 5)) %>% 
+  mutate(pbudget_2122_quintile = ntile(pbudget_camhs_2122, 5)) %>% 
+  mutate(avgwait_2122_quintile = ntile(-avg_wait_days_2122, 5)) %>% 
+  mutate(percreferred_2122_quintile = ntile(percreferred_202122, 5)) %>% 
+  mutate(referralsclosed_2122_quintile = ntile(-referrals_closed_2122, 5))
+
+
+### Sum quintile scores to calculated overall ccg score
+ccg_df <- ccg_df %>% 
+  mutate(overall_score_2122 = spc_2122_quintile + pbudget_2122_quintile + 
+           avgwait_2122_quintile + percreferred_2122_quintile + referralsclosed_2122_quintile)
+
+quintile_cols <- c("ccg","spc_2122_quintile","pbudget_2122_quintile","avgwait_2122_quintile",
+                   "percreferred_2122_quintile","referralsclosed_2122_quintile",
+                   "overall_score_2122")
+
+# Check scores
+ccg_df %>% select(all_of(quintile_cols)) 
+
+# Create summary dataframe
+summary_cols <- c("ccg","spc_202122","pbudget_camhs_2122","avg_wait_days_2122",
+                  "percreferred_202122","referrals_closed_2122","overall_score_2122")
+
+df_summary <- ccg_df %>% 
+  select(all_of(summary_cols)) %>% 
+  mutate(pbudget_camhs_2122 = round(pbudget_camhs_2122*100,1),
+         percreferred_202122 = round(percreferred_202122*100,1))
+
+# Export summary table for use in the interactive map script
+write.csv(df_summary, here('intermediate','summarytables_202122.csv'), row.names=FALSE)
+
+
+#### Tier 4 analysis ####
+
+# select columns
+t4_days <- ccg_df %>% select(starts_with(c("ccg","pop","t4beddays")))
+
+# Tier 4 bed days data is quarterly - calculate value per year
+t4_days <- t4_days %>% 
+  rowwise() %>% 
+  mutate(t4beddays_1718 = sum(c_across(t4beddays_Q1_201718:t4beddays_Q4_201718),na.rm=TRUE)) %>% 
+  mutate(t4beddays_1819 = sum(c_across(t4beddays_Q1_201819:t4beddays_Q4_201819),na.rm=TRUE)) %>% 
+  mutate(t4beddays_1920 = sum(c_across(t4beddays_Q1_201920:t4beddays_Q4_201920),na.rm=TRUE)) %>% 
+  mutate(t4beddays_2021 = sum(c_across(t4beddays_Q1_202021:t4beddays_Q4_202021),na.rm=TRUE)) %>%
+  mutate(t4beddays_2122 = sum(c_across(t4beddays_Q1_202122:t4beddays_Q4_202122),na.rm=TRUE))
+
+
+# Calculate Tier 4 bed days per 1000 CYP - 2020 is the latest available pop estimate for CCGs
+t4_days <- t4_days %>% 
+  mutate(t4bedrate_1819 = round(t4beddays_1819/(pop_2018/1000)),
+         t4bedrate_1920 = round(t4beddays_1920/(pop_2019/1000)),
+         t4bedrate_2021 = round(t4beddays_2021/(pop_2020/1000)),
+         t4bedrate_2122 = round(t4beddays_1920/(pop_2020/1000))) 
+
+
+### How many bed days did CYP have in tier 4 mental health wards? ###
+
+# England level
+t4_england <- t4_days %>% 
+  select(t4beddays_1718:t4beddays_2122) %>%  
+  group_by() %>% 
+  summarise_at(vars(everything()),~sum(.x,na.rm=T))
+
+t4_england_rate <- t4_days %>% 
+  select(t4bedrate_1819:t4bedrate_2122) %>% 
+  group_by() %>% 
+  summarise_at(vars(everything()), ~mean(.x,na.rm=T))
+
+# CCG level
+t4_ccg <- t4_days %>% 
+  select(ccg, t4beddays_1718:t4bedrate_2122)
+
+
+#### Adult ward analysis ####
+
+# select columns
+adultward_days <- ccg_df %>% select(starts_with(c("ccg","pop","adultward")))
+
+# Adult ward bed days data is quarterly - calculate value per year
+adultward_days <- adultward_days %>% 
+  rowwise() %>% 
+  mutate(adultward_2021 = sum(c_across(adultward_Q1_202021:adultward_Q4_202021),na.rm=TRUE)) %>%
+  mutate(adultward_2122 = sum(c_across(adultward_Q1_202122:adultward_Q4_202122),na.rm=TRUE))
+
+# Calculate adult ward bed days per 1000 CYP - 2020 is the latest available pop estimate for CCGs
+adultward_days <- adultward_days %>% 
+  mutate(adultwardrate_2021 = round(adultward_2021/(pop_2020/1000)),
+         adultwardrate_2122 = round(adultward_2122/(pop_2020/1000))) 
+
+
+# England level
+adultward_england <- adultward_days %>% 
+  select(adultward_2021:adultward_2122) %>%  
+  group_by() %>% 
+  summarise_at(vars(everything()),~sum(.x,na.rm=T))
+
+# CCG level
+adultward_ccg <- adultward_days %>% 
+  select(ccg, adultward_2021:adultwardrate_2122)
+
+
+#### Outputs ####
+
+# Tier 4- NUMBER of bed days - top 10 worst CCGs table
+t4_top10 <- t4_ccg %>%
+  select(ccg, t4beddays_2021, t4beddays_2122) %>% 
+  mutate(Change = t4beddays_2122 - t4beddays_2021) %>% 
+  arrange(desc(t4beddays_2122)) %>% 
+  rename('Clinical Commissioning Group'=ccg,
+         'No. bed days in 2020/21' = t4beddays_2021,
+         'No. bed days in 2021/22' = t4beddays_2122) %>% 
+  head(n=10)
+
+write.csv(t4_top10, here('outputs','t4_top10.csv'), row.names = FALSE)
+
+### Tier 4 bed days RATE - 10 worst CCGs table ###
+t4rate_top10 <- t4_ccg %>%
+  select(ccg, t4beddays_2122, t4bedrate_2021, t4bedrate_2122) %>% 
+  mutate(Change = t4bedrate_2122 - t4bedrate_2021) %>% 
+  arrange(desc(t4bedrate_2122)) %>% 
+  rename('Clinical Commissioning Group'=ccg,
+         'Total number of bed days in 2021/22' = t4beddays_2122,
+         'Number of bed days per 1000 CYP in 2020/21' = t4bedrate_2021,
+         'Number of bed days per 1000 CYP in 2021/22' = t4bedrate_2122) %>% 
+  head(n=10)
+write.csv(t4rate_top10, here('outputs','t4rate_top10.csv'), row.names = FALSE)
+
+
+# Tier 4 England trends
+write.csv(t4_england, here('outputs','t4_england.csv'), row.names = FALSE)
+
+
+### PLOT: Histogram to show distribution of tier 4 bed days across CCGs ### WORK IN PROGRESS ####
+t4_ccg %>% 
+ # filter(!ccg %in% c("NHS SUNDERLAND CCG")) %>% Sunderland did not provide values
+ggplot(aes(x=t4bedrate_2122)) +
+  geom_histogram(binwidth=3, colour="black", fill=occ_pal[2])+
+  theme_occ() +
+  labs(y= "Count of CCGs", x = "Rate of Tier 4 bed days per 1000 CYP")
+ggsave(here('output','t4rate_histogram.png'),width=6,height=4)
+
+### Create grouped box plot - fill = year ###
+
+# long version of t4_ccg dataframe
+t4_ccg_long <- t4_ccg %>% 
+  select(starts_with(c("ccg","t4bedrate"))) %>% 
+  pivot_longer(cols= t4bedrate_1819:t4bedrate_2122, values_to = "rate", names_to = "name") %>% 
+  mutate(year = case_when(name %in% c("t4bedrate_1819") ~ "2018/19",
+                          name %in% c("t4bedrate_1920") ~ "2019/20",
+                          name %in% c("t4bedrate_2021") ~ "2020/21",
+                          name %in% c("t4bedrate_2122") ~ "2021/22")) %>% 
+  select(-name)
+
+# Tier 4 facet histogram 
+t4_ccg_long %>% 
+  filter(year %in% c("2018/19","2021/22")) %>% 
+  # filter(!ccg %in% c("NHS SUNDERLAND CCG")) %>% Sunderland did not provide values
+  ggplot(aes(x=rate)) +
+  geom_histogram(binwidth=3, colour="black", fill=occ_pal[2])+
+   #geom_vline(aes(xintercept = mean(rate)),col="#202B51",size=2)+
+  facet_wrap(~year, ncol = 1)+
+ 
+  theme(text=element_text(family="HindVadodara",size=70,colour="#202B51"),
+        strip.text = element_text(family="HindVadodara", size = 100, color = "#202B51"))+
+  theme_occ() +
+ 
+  labs(y= "Count of CCGs", x = "Number of Tier 4 bed days per 1000 CYP")
+ggsave(here('output','t4rate_hist.png'),width=5,height=5)
+
+# create box plot
+ggplot(t4_ccg_long, aes(x=year, y=rate)) + 
+  geom_boxplot()+
+  theme_occ()
+
+
+
+
+
+# Top 10 CCGs with the largest increases in Tier 4 bed days.
+t4changes_top10 <- t4_ccg %>%
+  select(ccg, t4beddays_2122,t4bedrate_2021, t4bedrate_2122) %>% 
+  mutate(Change = t4bedrate_2122 - t4bedrate_2021) %>% 
+  arrange(desc(Change)) %>% 
+  rename('Clinical Commissioning Group'=ccg,
+         'Number of bed days in 2021/22' = t4beddays_2122,
+         'Rate of bed days per 1000 CYP in 2020/21' = t4bedrate_2021,
+         'Rate of bed days per 1000 CYP in 2021/22' = t4bedrate_2122) %>% 
+  head(n=10)
+write.csv(t4changes_top10, here('outputs','t4rate_changes.csv'), row.names = FALSE)
+
+
+
+# Tier 4 bed days annual trend chart - 2017/18 -2021/22 ### WORK IN PROGRESS ####
+
+
+
+### Adult ward bed days 10 worst CCGs table ###
+adultward_top10 <- adultward_ccg %>%
+  select(-adultwardrate_2021,-adultwardrate_2122) %>% 
+  mutate(Change = adultward_2122 - adultward_2021) %>% 
+  arrange(desc(adultward_2122)) %>% 
+  rename('Clinical Commissioning Group'=ccg,
+         'No. bed days in 2020/21' = adultward_2021,
+         'No. bed days in 2021/22' = adultward_2122) %>% 
+  head(n=10)
+write.csv(adultward_top10, here('outputs','adultward_top10.csv'), row.names = FALSE)
+
+
+### Top 10 % referred to CAMHS ### 
+percreferred_top10 <- ccg_df %>%
+  mutate(percreferred_change = round((percreferred_202122-percreferred_202021)*100),
+         percreferred_202021 = round(percreferred_202021*100),
+         percreferred_202122 = round(percreferred_202122*100)) %>% 
+  select(ccg,percreferred_202021,percreferred_202122,percreferred_change) %>% 
+  arrange(desc(percreferred_202122)) %>% 
+  rename('Clinical Commissioning Group'=ccg,
+         '% referred to CYPMHS in 2020/21' = percreferred_202021,
+         '% referred to CYPMHS in 2021/22' = percreferred_202122) %>% 
+  head(n=10)
+write.csv(percreferred_top10, here('outputs','percreferred_top10.csv'), row.names = FALSE)
+
+
+# Bottom 10 % referred to CAMHS
+
+
+percreferred_bottom10 <- ccg_df %>%
+  mutate(percreferred_change = round(percreferred_202122-percreferred_202021*100),
+         percreferred_202021 = round(percreferred_202021,2),
+         percreferred_202122 = round(percreferred_202122,2)) %>% 
+  select(ccg,percreferred_202021,percreferred_202122,percreferred_change) %>% 
+  arrange(percreferred_202122) %>% 
+  rename('Clinical Commissioning Group'=ccg,
+         '% referred to CYPMHS in 2020/21' = percreferred_202021,
+         '% referred to CYPMHS in 2021/22' = percreferred_202122) %>% 
+  head(n=10)
+
+  
+  df_summary %>%
+  select(ccg,percreferred_202122) %>%
+  arrange(percreferred_202122) %>%
+  rename('Clinical Commissioning Group'=ccg,
+         '% referred to CYPMHS' = percreferred_202122) %>%
+  head(n=10)
+write.csv(percreferred_bottom10, here('outputs','percreferred_bottom10.csv'), row.names = FALSE)
+
+# Top 10 % referrals closed
+
+refsclosed_top10 <- df_summary %>%
+  select(ccg,referrals_closed_2122) %>% 
+  arrange(desc(referrals_closed_2122)) %>% 
+  rename('Clinical Commissioning Group'=ccg,
+         '% referred closed before treatment' = referrals_closed_2122) %>% 
+  head(n=10)
+write.csv(refsclosed_top10, here('outputs','refsclosed_top10.csv'), row.names = FALSE)
+
+
+# Bottom 10 % referrals closed
+
+refsclosed_bottom10 <- df_summary %>%
+  select(ccg,referrals_closed_2122) %>% 
+  arrange(referrals_closed_2122) %>% 
+  rename('Clinical Commissioning Group'=ccg,
+         '% referred closed before treatment' = referrals_closed_2122) %>% 
+  head(n=10)
+write.csv(refsclosed_bottom10, here('outputs','refsclosed_bottom10.csv'), row.names = FALSE)
+
+
+# Top 10 - waiting time in days (worst ccgs - longest waiting time)
+avgwait_top10 <- df_summary %>%
+  select(ccg,avg_wait_days_2122) %>% 
+  arrange(desc(avg_wait_days_2122)) %>% 
+  rename('Clinical Commissioning Group'=ccg,
+         'Average wait time (days)' = avg_wait_days_2122) %>% 
+  head(n=10)
+write.csv(avgwait_top10, here('outputs','avgwait_top10.csv'), row.names = FALSE)
+
+# Bottom 10 waiting time in days (best ccgs - shortest wait time)
+
+avgwait_bottom10 <- df_summary %>%
+  select(ccg,avg_wait_days_2122) %>% 
+  arrange(avg_wait_days_2122) %>% 
+  rename('Clinical Commissioning Group'=ccg,
+         'Average wait time (days)' = avg_wait_days_2122) %>% 
+  head(n=10)
+
+write.csv(avgwait_bottom10, here('outputs','avgwait_bottom10.csv'), row.names = FALSE)
+
+# Top spend per child
+spc_top10 <- df_summary %>%
+  select(ccg,spc_202122) %>% 
+  arrange(desc(spc_202122)) %>%
+  mutate(spc_202122 = round(spc_202122)) %>%
+  rename('Clinical Commissioning Group'=ccg,
+         'Spend per child (£)' = spc_202122) %>%
+  head(n=10)
+write.csv(spc_top10, here('outputs','spc_top10.csv'), row.names = FALSE)
+
+
+# Bottom spend per child
+spc_bottom10 <- df_summary %>%
+  select(ccg,spc_202122) %>% 
+  arrange(spc_202122) %>% 
+  mutate(spc_202122 = round(spc_202122)) %>%
+  rename('Clinical Commissioning Group'=ccg,
+         'Spend per child (£)' = spc_202122) %>% 
+  head(n=10)
+write.csv(spc_bottom10, here('outputs','spc_bottom10.csv'), row.names = FALSE)
+
+
+# Top 10 - percentage of ccg budget
+
+percbudget_top10 <- df_summary %>%
+  select(ccg,pbudget_camhs_2122) %>% 
+  arrange(desc(pbudget_camhs_2122)) %>%
+  mutate(pbudget_camhs_2122 = round(pbudget_camhs_2122,1)) %>%
+  rename('Clinical Commissioning Group'=ccg,
+         '% of CCG budget (£)' = pbudget_camhs_2122) %>%
+  head(n=10)
+write.csv(percbudget_top10, here('outputs','percbudget_top10.csv'), row.names = FALSE)
+
+
+# Bottom 10 - percentage of ccg budget
+percbudget_bottom10 <- df_summary %>%
+  select(ccg,pbudget_camhs_2122) %>% 
+  arrange(pbudget_camhs_2122) %>% 
+  mutate(pbudget_camhs_2122 = round(pbudget_camhs_2122,1)) %>%
+  rename('Clinical Commissioning Group'=ccg,
+         '% of CCG budget (£)' = pbudget_camhs_2122) %>% 
+  head(n=10)
+write.csv(percbudget_bottom10, here('outputs','percbudget_bottom10.csv'), row.names = FALSE)
+
+
+# Top 20 - overall score
+overall_top20 <- df_summary %>%
+  select(ccg,overall_score_2122) %>% 
+  arrange(desc(overall_score_2122)) %>%
+  mutate(overall_score_2122 = round(overall_score_2122)) %>%
+  rename('Clinical Commissioning Group'=ccg,
+         'CCG overall score' = overall_score_2122) %>%
+  head(n=20)
+write.csv(overall_top20, here('outputs','overall_top20.csv'), row.names = FALSE)
+
+# Bottom 20 - overall score
+overall_bottom20 <- df_summary %>%
+  select(ccg,overall_score_2122) %>% 
+  arrange(overall_score_2122) %>% 
+  mutate(overall_score_2122 = round(overall_score_2122)) %>%
+  rename('Clinical Commissioning Group'=ccg,
+         'CCG overall score' = overall_score_2122) %>% 
+  head(n=20)
+write.csv(overall_bottom20, here('outputs','overall_bottom20.csv'), row.names = FALSE)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

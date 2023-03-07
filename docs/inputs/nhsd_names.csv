@@ -1,0 +1,24 @@
+Old,New
+Organisation Code,org_cd
+Organisation Name,ccg
+Total number of People,no_referred_2021
+"Average Waiting Time (for People with Two Contacts, Days)",avg_wait_days_2021
+Number of People Waiting Between 0 and 4 Weeks,wait_0to4_weeks_2021
+% Waiting Between 0 and 4 Weeks,wait_0to4_weeks_perc_2021
+Number of People Waiting Between 4 and 6 Weeks,wait_4to6_weeks_2021
+% Waiting Between 4 and 6 Weeks,wait_4to6_weeks_perc_2021
+Number of People Waiting Between 6 and 8 Weeks,wait_6to8_weeks_2021
+% Waiting Between 6 and 8 Weeks,wait_6to8_weeks_perc_2021
+Number of People Waiting Between 8 and 10 Weeks,wait_8to10_weeks_2021
+% Waiting Between 8 and 10 Weeks,wait_8to10_weeks_perc_2021
+Number of People Waiting Between 10 and 12 Weeks,wait_10to12_weeks_2021
+% Waiting Between 10 and 12 Weeks,wait_10to12_weeks_perc_2021
+Number of People Waiting Over 12 Weeks,wait_over12_weeks_2021
+% Waiting Over 12 Weeks,wait_over12_weeks_perc_2021
+Referral Closed Before Treatment ,referrals_closed_number_2021
+% Referral Closed Before Treatment ,referrals_closed_2021
+"Number of People Still Waiting, no contact",stillwaiting_nocontact_2021
+"% Still Waiting, no contact",stillwaiting_nocontact_perc_2021
+"Number of People Still Waiting, one contact",stillwaiting_onecontact_2021
+"% Still Waiting, one contact",stillwaiting_onecontact_perc_2021
+Contacts Before Referral,contacts_before_referral_2021

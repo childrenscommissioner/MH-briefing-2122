@@ -1,0 +1,51 @@
+---
+title: "Briefing on Children’s Mental Health Services – 2021-22"
+output: 
+ html_document: 
+   self_contained: no
+   theme: null
+   mathjax: null
+   highlight: null
+   css: styles.css
+   template: "CCO_template_html.html"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+
+
+setwd("W:/CCO-WORKING-FS/Projects/MH briefing/MHB2122/")
+```
+
+<link rel="stylesheet" href="../../styles.css" type="text/css" />
+
+
+```{r}
+
+#<link rel="stylesheet" href="../../styles.css" type="text/css" />
+
+```
+**Introduction**
+
+This is the Office of the Children’s Commissioner’s (OCC) sixth annual report on the state of children’s
+mental health services in England. The report aims to assess children’s ability to access Children and
+Young People’s Mental Health Services (CYPMHS) provision in England in 2021-22 and how (if at all) this
+has changed over the past two years. Using new figures sourced from NHS Digital, NHS England and
+NHS Improvement, this report examines the following at both a national and Clinical Commissioning
+Group (CCG) level:
+
+* Numbers of children referred to and accessing CYPMHS
+* Numbers of children referred that were not accepted into treatment during the 2021-22 financial year, as proxied by the numbers not receiving two contacts with CYPMHS
+* Average waiting times
+* Spending on children’s mental health
+
+</br>
+
+
+
+<div class="topic_navList">
+<a class="meta_navList_link" href="ccg maps/pages/ccg-maps.html">
+<h3 class="list_header">Access local area (CCG) maps</h3></a>
+</div>
+
+

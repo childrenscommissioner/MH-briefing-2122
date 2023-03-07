@@ -1,0 +1,27 @@
+{
+    "id": "017FBA1C",
+    "path": "W:/CCO-WORKING-FS/Projects/MH briefing/MHB2122/scripts/compile_data_V4.R",
+    "project_path": "scripts/compile_data_V4.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1677753469067.0,
+    "source_on_save": false,
+    "relative_order": 5,
+    "properties": {
+        "tempName": "Untitled1",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "51,0",
+        "scrollLine": "42"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1678100855,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1678100855919,
+    "read_only": false,
+    "read_only_alternatives": []
+}
