@@ -1,0 +1,171 @@
+---
+params:
+  section: "abc"
+  pg: "abc"
+  var: "abc"
+title: "Waiting times and outcomes"
+output: 
+ html_document: 
+   self_contained: no
+   mathjax: null
+   highlight: null
+   fig_width: 10
+   theme: null
+   template: "../CCO_template_html.html"
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = F,warning=F,message=F)
+
+setwd("W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis/waiting times")
+
+```
+
+<link rel="stylesheet" href="W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis//styles.css" type="text/css" />
+
+<a href="../../index.html">Home</a></li>
+
+```{r import packages}
+
+require(data.table)
+require(dplyr)
+require(tidyr)
+require(knitr)
+require(kableExtra)
+require(downloadthis)
+
+```
+
+<script src="extra_js.js"></script>
+
+<br/>
+Of the 497,502 children referred to CYPMHS in 2020/21, two-fifths received two contacts within the year (our proxy for entering treatment).
+
+* 146,366 children (29% of those referred) entered treatment within six weeks – an increase from 126,878 (24% of those referred) in 2019/20. Another 50,809 children (10.2% of those referred) entered treatment but waited more than six weeks – much lower than 68,457 children (13% of those referred) the previous year.
+* As with other indicators, the average waiting time for children to enter treatment (two contacts with CYPMHS) varies widely by CCG from as quick as 6 days in NHS Castle Point and Rochford to almost 81 days in NHS Cannock Chase.
+* The percentage of children still waiting for treatment at the end of the year also varied significantly at a CCG level from as low as 14% in NHS Castle Point and Rochford and NHS Mid Essex to 78% in NHS East Sussex. 
+* This is slightly worse than in 2018/19 where the CCG with the highest proportion of children still waiting was 69% in NHS South Warwickshire while the lowest proportion was 10%. This compares to lows of 10% in NHS Tower Hamlets to highs of 74% in NHS North Lincolnshire the previous year.
+
+<br/>
+
+**Figure 1. Percentage of children referred to CYPMHS in 2018/19 to 2020/21 by outcome.**
+
+![](W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis/waiting times/wtproportion.png){#id .class width=90% height=90%}
+
+```{r outcomes, echo=FALSE}
+
+# #**Figure 1. Percentage of children referred to CYPMHS in 2018/19 to 2020/21 by outcome.**
+# 
+
+#![Caption for the picture.](/path/to/image.png)
+
+```
+<br/>
+
+Amongst those who do receive two contacts within the year, national average waiting times for children referred to CYPMHS have reduced for three consecutive years. The average waiting time from referral to second contact has improved from 53 days in 2018/19 and 43 days in 2019/20 to 32 days in 2020/21.
+
+* This year, 29 CCGs (21%) had an average waiting time of three weeks (21 days) or less – a considerable increase from 11 CCGs in 2019/20 and three CCGs in 2018/19. Furthermore, 85% (115) of CCGs improved their average waiting times in 2020/21, the same as last year. 
+
+* On average, CCGs with the largest decreases in waiting time (for those who received two contacts) also saw the biggest rise in the number of children still waiting without two contacts. This implies that a higher proportion of children are being placed on waiting lists, while those who manage to enter treatment (perhaps due to symptom severity and other vulnerabilities) are getting seen faster.
+
+<br/>
+
+**Table 1. CCGs with the lowest waiting times between referral and second contact with CYPMHS in 2020/21.**
+
+```{r wait time under 3, echo=FALSE}
+
+### Lowest waiting times ###
+
+lowestwait <- fread("W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis/tables/t1_wait_lowest.csv")
+
+kable(lowestwait) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) 
+
+lowestwait %>%
+  download_this(
+    output_name = "big ask data download",
+    output_extension = ".xlsx",
+    button_label = "Download data as xlsx",
+    button_type = "default",
+    has_icon = TRUE,
+    icon = "fa fa-save"
+  )
+
+
+```
+<br/>
+
+**CCGs with the longest waiting times between referral and second contact with CYPMHS in 2020/21.**
+
+```{r highest wait, echo=FALSE}
+
+### Highest waiting times ###
+
+highestwait <- fread("W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis/tables/t2_wait_highest.csv")
+
+kable(highestwait) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) 
+
+highestwait %>%
+  download_this(
+    output_name = "big ask data download",
+    output_extension = ".xlsx",
+    button_label = "Download data as xlsx",
+    button_type = "default",
+    has_icon = TRUE,
+    icon = "fa fa-save"
+  )
+
+
+```
+<br/>
+
+**Table 2. The 10 CCGs with the largest increases in average waiting time from 2017/18 to 2019/20.**
+
+```{r increase wait, echo=FALSE}
+
+### increase in waiting times ###
+
+increasewait <- fread("W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis/tables/t3_wait_largestincrease.csv")
+
+kable(increasewait) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) 
+
+increasewait %>%
+  download_this(
+    output_name = "big ask data download",
+    output_extension = ".xlsx",
+    button_label = "Download data as xlsx",
+    button_type = "default",
+    has_icon = TRUE,
+    icon = "fa fa-save"
+  )
+
+
+```
+<br/>
+
+**Table 3. The 10 CCGs with the largest decreases in average waiting time from 2017/18 to 2019/20.**
+
+```{r decrease wait, echo=FALSE}
+
+### decrease in waiting times ###
+
+decreasewait <- fread("W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis/tables/t4_wait_largestdecrease.csv")
+
+kable(decreasewait) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) 
+
+decreasewait %>%
+  download_this(
+    output_name = "big ask data download",
+    output_extension = ".xlsx",
+    button_label = "Download data as xlsx",
+    button_type = "default",
+    has_icon = TRUE,
+    icon = "fa fa-save"
+  )
+
+
+```

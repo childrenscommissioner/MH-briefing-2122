@@ -1,0 +1,284 @@
+---
+title: "MH 2020 local area maps"
+author: "Rebecca Gilhooly"
+date: "06/01/2021"
+output: html_document
+---
+<br/>
+These maps present 2019/20 Clinical Commissioning Group (CCG) performance on five key indicators used to assess children's mental health services (CAMHS) provision. These indicators are:
+<br/>
+* CCG spend on children's mental health as a percentage of CCG budget.
+
+* Mental health spend per child (calculated using NHS Five Year Forward View (FYFV) spending figures and ONS mid 2019 CCG population estimates.
+
+* Total number of children referred to CAMHS as a proportion of the under-18 population.
+
+* Average waiting time for children who receive a second contact.
+
+* The percentage of referrals that are closed before treatment.
+<br/><br/>
+
+Also shown is an _overall score_ for each CCG calculated based on their performance on the indicators above. This provides an overall indication of how each CCG compares to the rest of England.
+
+This analysis uses data provided by NHS England and NHS Digital from two key sources: the NHS Mental Health Services Dataset (MHSDS) and Five Year Foward View (FYFV) dashboard. More detail on sources and the methodology for calculating these figures is available in the accompanying technical report.
+<br/><br/>
+
+### Limitations to consider
+
+* This report does not include figures on low-level mental health provision such as school-based counselling or those provided by other organisations. CCGs that spend heavily on low-level services at the expense of more formal CAMHS provision may find that out scoring system undervalues their investment.
+
+* Children who had their referrals closed may not have required specialist treatment or may have been referred to services provided by other organisations such as charities, social care and private healthcare practices. However, the data does not show where they may have been referred to, making this a key gap in establishing the outcomes and circumstances of those referred.
+
+* The NHS has highlighted that not all providers of mental health services submitted data for the MHSDS. Though the dataset is not complete due to underreporting, it is still the best representation of mental health services data we have available. 
+<br/>
+As such, these results do not provide a wholly complete picture of the mental health support available for children but is still a useful starting point and reference for assessing the quality of CAMHS provision at a local level.
+<br/><br/>
+ 
+## NHS Clinical Commissioning Group Maps
+***
+Hover over an area to display more information, scroll up and down to zoom.
+ 
+```{r,echo=F,message=F,warning=F,include=F}
+
+require(rgdal)
+require(rgeos)
+require(rmapshaper)
+require(leaflet)
+require(dplyr)
+
+map <- readOGR(dsn = "C:/Users/rgilhooly/OneDrive - Department for Education/Documents/Projects/Mental Health Briefing/CCG shape files/2019 CCG shape file")
+map <- rmapshaper :: ms_simplify(map,keep=0.1)
+
+
+#saveRDS save any object in R in many formats
+
+saveRDS(map,"C:/Users/rgilhooly/OneDrive - Department for Education/Documents/Projects/Mental Health Briefing/ccgmap19.rds")
+
+map <- readRDS("C:/Users/rgilhooly/OneDrive - Department for Education/Documents/Projects/Mental Health Briefing/ccgmap19.rds")
+
+map$CCG19CD <- as.character(map$CCG19CD)
+
+ccg_code <- map@data %>% select(CCG19NM, CCG19CD)
+
+mhdata20 <- read.csv("C:/Users/rgilhooly/OneDrive - Department for Education/Documents/Projects/Mental Health Briefing/MH briefing 2020/MH R tables 2020.csv", stringsAsFactors = F)
+
+overall_sc <- mhdata20
+
+london <- read.csv("C:/Users/rgilhooly/OneDrive - Department for Education/Documents/Projects/Mental Health Briefing/london ccg.csv", stringsAsFactors = F)
+
+
+# check that codes are in both datasets
+overall_sc$ccg_cd[!overall_sc$ccg_cd %in% map$CCG19CD]
+
+for(i in c("perc_budget","spend_YP","perc_access","avg_wait","perc_closed","overall_score")){
+  
+  vNm<-rlang::sym(paste0(i,"_fill"))
+  v1<-rlang::sym(i)
+  
+  overall_sc<-overall_sc %>%
+    mutate(!!vNm:=scales::rescale(!!v1,c(0,1)))
+  
+  
+}
+
+# change from British standard to GPS format 
+map <- spTransform(map, "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+
+map <- sp::merge(map,overall_sc, by.x="CCG19CD", by.y="ccg_cd")
+
+outcomes<-data.frame(var=c("perc_budget","spend_YP","perc_access","avg_wait","perc_closed","overall_score"),
+                     lb=c("% of CCG budget spent on CAMHS","Spend per child (£) on CAMHS","% of children referred to CAMHS",
+                          "Average waiting time (days)","% of CAMHS referrals closed before treatment","CCG overall score"),stringsAsFactors = F)
+
+require(ggplot2)
+require(RColorBrewer)
+
+pal <- colorNumeric("viridis", domain = c(0,1))
+
+labels <- lapply(list("perc_budget","spend_YP","perc_access","avg_wait","perc_closed","overall_score"), 
+                 function(x){
+                   
+                   if(grepl("perc",x)){
+                     paste0("<strong>", map$CCG19NM, "</strong><br/>", outcomes$lb[outcomes$var==x],": ",
+                            round(map@data[,x],4)*100)
+                     
+                   }else{
+                     paste0("<strong>", map$CCG19NM, "</strong><br/>", outcomes$lb[outcomes$var==x],": ",
+                            map@data[,x])
+                     
+                   }
+                   
+                            
+                   })
+
+for(i in seq_len(length(labels))){
+  
+  labels[[i]]<-lapply(labels[[i]],htmltools::HTML)
+  
+}
+
+names(labels)<-c("perc_budget","spend_YP","perc_access","avg_wait","perc_closed","overall_score")
+    
+
+```
+
+```{r, out.width="100%",echo=F,message=F,warning=F}
+                                                                                       
+leaflet(data=map, options = leafletOptions(backgroun="#FFF")) %>%
+  addProviderTiles(providers$CartoDB) %>%
+  addPolygons(color="#444444", weight=1, smoothFactor = 0.5,
+              opacity=1.0, fillOpacity = 0.7, fillColor = ~pal(overall_score_fill),
+              popupOptions = highlightOptions(bringToFront = T, weight=4),
+              label =labels[["overall_score"]],group="CCG overall score") %>%
+  
+  addPolygons(color="#444444", weight=1, smoothFactor = 0.5,
+              opacity=1.0, fillOpacity = 0.7, fillColor = ~pal(perc_closed_fill),
+              popupOptions = highlightOptions(bringToFront = T, weight=4),
+              label =labels[["perc_closed"]],group="% Referrals closed") %>%
+  
+  addPolygons(color="#444444", weight=1, smoothFactor = 0.5,
+              opacity=1.0, fillOpacity = 0.7, fillColor = ~pal(avg_wait_fill),
+              popupOptions = highlightOptions(bringToFront = T, weight=4),
+              label =labels[["avg_wait"]],group="Average wait (days)") %>%
+  
+  addPolygons(color="#444444", weight=1, smoothFactor = 0.5,
+              opacity=1.0, fillOpacity = 0.7, fillColor = ~pal(perc_access_fill),
+              popupOptions = highlightOptions(bringToFront = T, weight=4),
+              label =labels[["perc_access"]],group="% Referred to CAMHS") %>%
+  
+  addPolygons(color="#444444", weight=1, smoothFactor = 0.5,
+              opacity=1.0, fillOpacity = 0.7, fillColor = ~pal(spend_YP_fill),
+              popupOptions = highlightOptions(bringToFront = T, weight=4),
+              label =labels[["spend_YP"]],group="CAMHS spend per child") %>%
+  
+  addPolygons(color="#444444", weight=1, smoothFactor = 0.5,
+              opacity=1.0, fillOpacity = 0.7, fillColor = ~pal(perc_budget_fill),
+              popupOptions = highlightOptions(bringToFront = T, weight=4),
+              label =labels[["perc_budget"]],group="% CCG budget spent on CAMHS") %>%
+  
+  addLayersControl(
+    baseGroups = c("CCG overall score","% Referrals closed","Average wait (days)","% Referred to CAMHS","CAMHS spend per child","% CCG budget spent on CAMHS"),
+    options = layersControlOptions(collapsed = FALSE)) %>%
+  addLegend("topleft", pal = pal, values = seq(0,1),bins=5,
+            labFormat = function(type, cuts, p) { 
+              n = length(cuts) 
+              cuts[n] = "Highest rate" 
+              for (i in 2:(n-1)){cuts[i] = " "} 
+              cuts[1] = "Lowest rate" 
+              paste0(cuts[-n], cuts[-1])},
+            title = "Title",
+            na.label = "Missing/excluded",
+            opacity = 0.7
+  ) 
+
+```
+
+```{r, results='asis',echo=F,warning=F}
+minVals<-sapply(c("overall_score","perc_closed","avg_wait","perc_access","spend_YP","perc_budget"),function(x){
+     
+  if(grepl("perc",x)){
+  
+     paste0(round(min(overall_sc[,x])*100,4),"%")
+    }else if(x=="avg_wait"){
+       
+      paste0(min(overall_sc[,x])," days")
+       
+    }else if(x=="spend_YP"){
+       paste0("£",min(overall_sc[,x])," per child")
+    }else{
+       
+      paste0(min(overall_sc[,x]))
+     }
+     
+   }) 
+
+maxVals<-sapply(c("overall_score","perc_closed","avg_wait","perc_access","spend_YP","perc_budget"),function(x){
+     
+  if(grepl("perc",x)){
+  
+     paste0(round(max(overall_sc[,x])*100,4),"%")
+    }else if(x=="avg_wait"){
+       
+      paste0(max(overall_sc[,x])," days")
+       
+    }else if(x=="spend_YP"){
+       paste0("£",max(overall_sc[,x])," per child")
+    }else{
+       
+      paste0(max(overall_sc[,x]))
+     }
+   }) 
+
+
+minVals<-jsonlite::toJSON(minVals,"values")
+
+maxVals<-jsonlite::toJSON(maxVals,"values")
+
+cat(paste0('<script>
+  
+  window.addEventListener("load", function () {
+    var eles = document.getElementsByClassName("leaflet-control-layers-base");
+    
+    eles[0].insertAdjacentHTML("afterbegin","<span style=',"'","margin-bottom:3px;font-weight:bold","'",'>Select measure to view:</span>")
+
+  var maxArr = ',maxVals,';
+
+  var minArr = ',minVals,';
+
+  var legendEntries = document.getElementsByClassName("leaflet-control-layers-selector")
+
+  for (var i=0; i < legendEntries.length; i++){
+
+  legendEntries[i].setAttribute("minval_map",minArr[i])
+
+  legendEntries[i].setAttribute("maxval_map",maxArr[i])
+
+  }
+
+var legend_1 = document.getElementsByClassName("info legend leaflet-control")[0]
+
+  var legEntries_1 = legend_1.getElementsByTagName("text")
+
+  legEntries_1[0].innerHTML = minArr[0]
+
+  
+  legEntries_1[legEntries_1.length - 1].innerHTML = maxArr[0]
+
+
+f3 = function(){
+
+  var minVal_var = this.getAttribute("minval_map")
+
+  var maxVal_var = this.getAttribute("maxval_map")
+
+  var legend = document.getElementsByClassName("info legend leaflet-control")[0]
+
+  var legEntries = legend.getElementsByTagName("text")
+
+  legEntries[0].innerHTML = minVal_var
+
+  
+
+  legEntries[legEntries.length - 1].innerHTML = maxVal_var
+
+  
+
+  }
+
+  for (var i=0; i < legendEntries.length; i++){
+
+  legendEntries[i].addEventListener("click",f3)
+
+  }
+    
+})
+
+  
+  
+
+  </script>'
+  ))
+```
+
+<br/> <br/>
+

@@ -1,0 +1,110 @@
+﻿.show_text {
+  color: #337ab7;
+  cursor: pointer;
+}
+
+
+label {
+display: inline-block;
+width: 100%;
+font-style: italic;
+font-weight: normal;
+}
+
+.picker-group {
+width: 100%;
+margin-top: 3%;
+margin-bottom: 2%;
+
+}
+
+.topic_navList{
+  border-left: 6px solid #2271b1;
+  background-color: white;
+  width: 100%;
+  margin-right: auto;
+  margin-left: 5%;
+  margin-top: 2%;
+}
+
+.meta_navList_link{
+  cursor: pointer;
+  color: black;
+}
+
+.list_header{
+  padding: 2%;
+}
+
+
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "&#xe258;";
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+
+.breadcrumb ol {
+    list-style-type: none;
+    padding: 0;
+}
+
+
+.breadcrumb {
+    display: inline-block;
+}
+
+.breadcrumb a::after {
+    display: inline-block;
+    color: #000;
+    content: '>>';
+    font-size: 80%;
+    font-weight: bold;
+    padding: 0 1px;
+}

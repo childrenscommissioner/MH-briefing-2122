@@ -1,0 +1,67 @@
+---
+params:
+  section: "abc"
+  pg: "abc"
+  var: "abc"
+title: "Data sources"
+output: 
+ html_document: 
+   self_contained: no
+   mathjax: null
+   highlight: null
+   fig_width: 10
+   theme: null
+   template: "../CCO_template_html.html"
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = F,warning=F,message=F)
+
+setwd("W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis/data sources")
+```
+
+<link rel="stylesheet" href="W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis//styles.css" type="text/css" />
+
+<a href="../../index.html">Home</a></li>
+
+```{r import}
+
+# import most packages needed
+require(readxl)
+require(data.table)
+require(dplyr)
+require(ggplot2)
+require(reactable)
+require(htmltools)
+require(tippy)
+```
+<script src="extra_js.js"></script>
+
+<br/>
+
+All data used in this analysis, except where specified, is sourced from two data extracts provided by NHS Digital and NHS England.
+
+1.	NHS Five-Year Forward View for Mental Health Dashboard
+
+The Five-Year Forward View for Mental Health (FYFVMH) dashboard aggregates key data across mental health services to monitor performance against targets set in their five-year plan. In 2020/21, the underlying data aggregated in the dashboard was collected via the NHS Mental Health Services Dataset (MHSDS). 
+The dashboard data provides information on:
+
+* The percentage of young people accessing mental health services during the year estimated as a proportion of children and young people with a diagnosable mental health condition.
+* Levels of spending on children and young people’s mental health services and how this compares to overall CCG budgets.
+* The percentage of children and young people able to access eating disorder treatment within a 1 week or 4 week time frame.
+
+
+2.	NHS Mental Health Services Data Set
+
+The Mental Health Services Data Set (MHSDS) contains pseudonymised record-level data from all CCGs in England about the care of young people and adults who are in contact with mental health, learning disabilities or autism spectrum disorder services. 
+
+As with last year, the Children’s Commissioner’s Office used its statutory powers under Section 2F of the Children Act to acquire aggregate CCG level figures from the MHSDS from NHS Digital. The dataset compiles information on all children referred to CYPMHS for treatment during 2019/20 and provides us with the following information:
+
+* Waiting time between referrals and second contact broken down by weeks.
+
+* The number and percentage of children who had referrals that were closed before receiving treatment.
+
+* The number and percentage of children still awaiting their second contact at the end of the year.
+
+

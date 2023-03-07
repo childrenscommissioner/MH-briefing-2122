@@ -1,0 +1,63 @@
+---
+params:
+  section: "abc"
+  pg: "abc"
+  var: "abc"
+title: "Methodology"
+output: 
+ html_document: 
+   self_contained: no
+   mathjax: null
+   highlight: null
+   fig_width: 10
+   theme: null
+   template: "../CCO_template_html.html"
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = F,warning=F,message=F)
+
+setwd("W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis/Methodology")
+```
+
+<link rel="stylesheet" href="W:/CCO-WORKING-FS/Projects/MH briefing/MH briefing 202021/analysis//styles.css" type="text/css" />
+
+<a href="../../index.html">Home</a></li>
+
+```{r import}
+
+# import most packages needed
+require(readxl)
+require(data.table)
+require(dplyr)
+require(ggplot2)
+require(reactable)
+require(htmltools)
+require(tippy)
+```
+
+<script src="extra_js.js"></script>
+
+</br>
+
+**Analysis methods**
+
+Key measures
+
+Updating last year’s report, we use data for the 2020/21 financial year to assess national and CCG performance on five key indicators:
+
+* CCG spending on children’s mental health as a percentage of total CCG allocation
+
+* Mental health spend per child - calculated using NHS FYFVMH spending figures and ONS mid-2020 CCG population estimates
+
+* Total number of children referred to children’s mental health services as a proportion of the under-18 population.
+
+* Average waiting time for children who receive a second contact.
+
+* The percentage of referrals that are closed before treatment.
+
+
+*Note: Since last year’s report was published, multiple smaller CCGs merged to form new combined CCGs (see appendix for full list). Where this report compares rates over time, the average rate of the smaller CCGs in previous years is taken to represent the past rate of the combined CCG. Some of the best performing CCGs last year have been merged with lower scoring CCGs and thus pulling down their combined averages (and vice versa when worse performing CCGs are merged with better performing CCGs).*
+
+
